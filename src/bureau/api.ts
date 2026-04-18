@@ -81,9 +81,14 @@ export const accountingApi = {
 
 // ── Chat ─────────────────────────────────────────────────────────────────────
 export const chatApi = {
-  list: (since?: number) => request<ChatMessage[]>('messages.php', 'GET', undefined, { action: 'list', ...(since ? { since: String(since) } : {}) }),
-  send: (content: string, channel = 'general') => request<{ message: ChatMessage }>('messages.php', 'POST', { content, channel }, { action: 'send' }),
+  list:      (since?: number, channel = 'general') => request<ChatMessage[]>('messages.php', 'GET', undefined, { action: 'list', channel, ...(since ? { since: String(since) } : {}) }),
+  send:      (content: string, channel = 'general') => request<{ message: ChatMessage }>('messages.php', 'POST', { content, channel }, { action: 'send' }),
+  unreadDms: (sinceId?: number) => request<Record<string, number>>('messages.php', 'GET', undefined, { action: 'unread_dms', ...(sinceId ? { since_id: String(sinceId) } : {}) }),
 };
+
+export function dmChannel(myId: number, otherId: number): string {
+  return 'dm:' + [myId, otherId].sort((a, b) => a - b).join('-');
+}
 
 // ── Feedback ─────────────────────────────────────────────────────────────────
 export const feedbackApi = {

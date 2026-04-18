@@ -488,11 +488,18 @@ app.all('/api/bureau/accounting.php', async (req, res) => {
 // CHAT INTERNE
 // ══════════════════════════════════════════════════════════════════════════════
 app.all('/api/bureau/messages.php', async (req, res) => {
-  const { action, since } = req.query;
+  const { action, since, channel } = req.query;
 
   if (action === 'list') {
     const u = await authGuard(req, res); if (!u) return;
-    let q = supabase.from('messages').select('*, sender:users!sender_id(full_name)').order('created_at');
+    const ch = channel || 'general';
+    // Pour les DMs, vérifier que l'utilisateur fait partie du canal
+    if (String(ch).startsWith('dm:')) {
+      const parts = String(ch).replace('dm:', '').split('-');
+      if (!parts.includes(String(u.id))) return res.status(403).json({ error: 'Accès refusé' });
+    }
+    let q = supabase.from('messages').select('*, sender:users!sender_id(full_name)')
+      .eq('channel', ch).order('created_at');
     if (since) q = q.gt('id', +since);
     else q = q.limit(100);
     const { data } = await q;
@@ -502,10 +509,33 @@ app.all('/api/bureau/messages.php', async (req, res) => {
   if (action === 'send' && req.method === 'POST') {
     const u = await authGuard(req, res); if (!u) return;
     if (!req.body.content?.trim()) return res.status(400).json({ error: 'Message vide' });
+    const ch = req.body.channel || 'general';
+    // Pour les DMs, vérifier que l'utilisateur fait partie du canal
+    if (String(ch).startsWith('dm:')) {
+      const parts = String(ch).replace('dm:', '').split('-');
+      if (!parts.includes(String(u.id))) return res.status(403).json({ error: 'Accès refusé' });
+    }
     const { data } = await supabase.from('messages')
-      .insert({ sender_id: u.id, channel: req.body.channel || 'general', content: req.body.content.trim() })
+      .insert({ sender_id: u.id, channel: ch, content: req.body.content.trim() })
       .select('*, sender:users!sender_id(full_name)').single();
     return res.json({ success: true, message: data ? { ...data, sender: undefined, sender_name: data.sender?.full_name } : null });
+  }
+
+  // Comptage des non-lus DM pour l'utilisateur courant
+  if (action === 'unread_dms') {
+    const u = await authGuard(req, res); if (!u) return;
+    const { data } = await supabase.from('messages')
+      .select('channel, sender_id')
+      .like('channel', 'dm:%')
+      .gt('id', +(req.query.since_id || 0));
+    const unread: Record<string, number> = {};
+    (data ?? []).forEach(m => {
+      const parts = String(m.channel).replace('dm:', '').split('-');
+      if (parts.includes(String(u.id)) && String(m.sender_id) !== String(u.id)) {
+        unread[m.channel] = (unread[m.channel] || 0) + 1;
+      }
+    });
+    return res.json(unread);
   }
 
   res.status(404).json({ error: 'Action non trouvée' });
