@@ -1,0 +1,59 @@
+import { Routes, Route, Navigate } from "react-router-dom";
+import { BureauProvider, useAuth } from "./BureauContext";
+import { LoginPage } from "./LoginPage";
+import { ChangePasswordPage } from "./ChangePasswordPage";
+import { DashboardLayout } from "./DashboardLayout";
+import { OverviewPage } from "./pages/OverviewPage";
+import { ProjectsPage } from "./pages/ProjectsPage";
+import { ChatPage } from "./pages/ChatPage";
+import { ComptabilitePage } from "./pages/ComptabilitePage";
+import { EquipePage } from "./pages/EquipePage";
+import { RHPage, MissionsPage, RetoursPage, SettingsPage } from "./pages/OtherPages";
+import { ClientMessagesPage } from "./pages/ClientMessagesPage";
+import { LeadsPage } from "./pages/LeadsPage";
+
+function BureauInner() {
+  const { user, loading, mustChangePassword } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#08090b] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-coral" />
+          <p className="text-sm text-white/30">Chargement…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return <LoginPage />;
+  if (mustChangePassword) return <ChangePasswordPage />;
+
+  return (
+    <Routes>
+      <Route element={<DashboardLayout />}>
+        <Route index element={<Navigate to="overview" replace />} />
+        <Route path="overview"      element={<OverviewPage />} />
+        <Route path="projets"       element={<ProjectsPage />} />
+        <Route path="missions"      element={<MissionsPage />} />
+        <Route path="chat"          element={<ChatPage />} />
+        <Route path="rh"            element={<RHPage />} />
+        <Route path="comptabilite"  element={<ComptabilitePage />} />
+        <Route path="retours"       element={<RetoursPage />} />
+        <Route path="clients"       element={<ClientMessagesPage />} />
+        <Route path="leads"         element={<LeadsPage />} />
+        <Route path="equipe"        element={<EquipePage />} />
+        <Route path="parametres"    element={<SettingsPage />} />
+        <Route path="*"             element={<Navigate to="overview" replace />} />
+      </Route>
+    </Routes>
+  );
+}
+
+export function BureauApp() {
+  return (
+    <BureauProvider>
+      <BureauInner />
+    </BureauProvider>
+  );
+}

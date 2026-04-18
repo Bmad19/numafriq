@@ -1,0 +1,137 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Base ───────────────────────────────────────────────────────────────────── */
+@layer base {
+  html {
+    /* scroll-behavior géré au cas par cas via JS pour éviter la latence globale */
+    -webkit-overflow-scrolling: touch;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Empêche le scroll horizontal parasite */
+    overflow-x: hidden;
+    /* Évite le saut de scrollbar */
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    @apply bg-ink text-mist antialiased;
+    overflow-x: hidden;
+  }
+
+  /* Images : pas de layout shift */
+  img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Select sombre */
+  select option {
+    background-color: #0a0a0c;
+    color: #f4f2ef;
+  }
+}
+
+/* ─── Utilitaires GPU ciblés ────────────────────────────────────────────────── */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Accélération GPU sur demande — ne pas appliquer à tout */
+  .gpu {
+    transform: translateZ(0);
+    will-change: transform;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* Scrollbar fine et discrète */
+  .styled-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+  }
+  .styled-scrollbar::-webkit-scrollbar       { width: 5px; height: 5px; }
+  .styled-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .styled-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 99px;
+  }
+  .styled-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+}
+
+/* ─── GPU ciblé — uniquement éléments fixes animés ──────────────────────────── */
+/* NE PAS mettre will-change sur tout → contre-productif */
+.numafriq-header,
+.numafriq-portailbar,
+.numafriq-chatwidget,
+.numafriq-whatsapp {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* ─── Page transitions ──────────────────────────────────────────────────────── */
+.page-enter {
+  opacity: 0;
+  transform: translateY(12px);
+}
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 280ms ease, transform 280ms ease;
+}
+.page-exit {
+  opacity: 1;
+}
+.page-exit-active {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+/* ─── Transitions de liens de navigation ────────────────────────────────────── */
+a, button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ─── Prefers reduced motion ────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── HeroSlider — barre de progression CSS (zéro JS) ────────────────────────── */
+@keyframes hero-progress {
+  from { width: 0%; }
+  to   { width: 100%; }
+}
+.hero-progress-bar {
+  animation: hero-progress 5.5s linear forwards;
+}
+
+/* ─── Scrollbar globale discrète ─────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.18); }
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.08) transparent; }

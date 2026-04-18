@@ -1,0 +1,23 @@
+# Dépendances
+node_modules/
+dist/
+
+# Fichiers sensibles — NE JAMAIS committer
+.env
+.env.local
+.env.*.local
+
+# Le .env.production contient des URLs publiques (pas de clés) — OK à committer
+# Mais si tu y mets des clés secrètes, ajoute-le ici aussi
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Vite
+*.local
+.vite/
