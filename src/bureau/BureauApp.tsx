@@ -11,6 +11,9 @@ import { EquipePage } from "./pages/EquipePage";
 import { RHPage, MissionsPage, RetoursPage, SettingsPage } from "./pages/OtherPages";
 import { ClientMessagesPage } from "./pages/ClientMessagesPage";
 import { LeadsPage } from "./pages/LeadsPage";
+import { AgentAssistantPage } from "./pages/AgentAssistantPage";
+import { BlogArticlesPage } from "./pages/BlogArticlesPage";
+import { CareersOffersPage } from "./pages/CareersOffersPage";
 
 function BureauInner() {
   const { user, loading, mustChangePassword } = useAuth();
@@ -42,6 +45,9 @@ function BureauInner() {
         <Route path="retours"       element={<RetoursPage />} />
         <Route path="clients"       element={<ClientMessagesPage />} />
         <Route path="leads"         element={<LeadsPage />} />
+        <Route path="assistant"      element={<AgentAssistantPage />} />
+        <Route path="blog"          element={<BlogArticlesPage />} />
+        <Route path="recrutement"   element={<CareersOffersPage />} />
         <Route path="equipe"        element={<EquipePage />} />
         <Route path="parametres"    element={<SettingsPage />} />
         <Route path="*"             element={<Navigate to="overview" replace />} />

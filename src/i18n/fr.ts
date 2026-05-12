@@ -4,9 +4,10 @@ const fr = {
     home:          "Accueil",
     services:      "Services",
     realisations:  "Réalisations",
-    tarifications: "Tarifications",
+    blog:          "Blog",
     apropos:       "A propos",
     contact:       "Contact",
+    carrieres:     "Carrières",
     cta:           "Démarrer un projet",
   },
 
@@ -61,9 +62,9 @@ const fr = {
         cta:   "Créer un site web",
       },
       {
-        title: "Développer votre visibilité",
-        text:  "SEO, contenu et campagnes d'acquisition pour attirer une audience qualifiée et générer des demandes concrètes.",
-        cta:   "Voir les packs",
+        title: "Décrypter le juridique & la conformité",
+        text:  "Articles sélectionnés du cabinet Afrilex Conseil : contrats, gouvernance OHADA et bonnes pratiques pour les dirigeants.",
+        cta:   "Voir le blog",
       },
       {
         title: "Vous différencier durablement",
@@ -96,7 +97,7 @@ const fr = {
     ctaTitle:  "Votre site doit vous aider à vendre, rassurer et grandir.",
     ctaSub:    "Parlons de vos objectifs. Construisons ensemble une plateforme digitale claire, crédible et parfaitement adaptée à la réalité de votre marché africain ou international.",
     ctaBtn1:   "Lancer mon projet",
-    ctaBtn2:   "Consulter les tarifications",
+    ctaBtn2:   "Lire le blog",
   },
 
   // ── Services ─────────────────────────────────────────────────────────────
@@ -150,6 +151,49 @@ const fr = {
       { n: "170+", l: "projets digitaux" },
       { n: "10+",  l: "pays couverts" },
     ],
+  },
+
+  // ── Blog (flux Afrilex Conseil) ───────────────────────────────────────────
+  blog: {
+    brand:             "Afrilex Conseil",
+    seoDescription:
+      "Décryptages juridiques, conformité OHADA et conseils pratiques issus du blog Afrilex Conseil (Ouagadougou).",
+    heroEyebrow:       "Cabinet & conseil",
+    heroTitle:         "Le blog Afrilex Conseil",
+    heroDescription:
+      "Analyses juridiques, conformité et gouvernance : articles rédigés par le cabinet et publiés sur ce site ; les lecteurs peuvent commenter sous chaque publication.",
+    sourceDisclaimer:
+      "Contenus éditoriaux gérés par l’équipe Afrilex ; ils peuvent être mis à jour depuis l’espace bureau sécurisé.",
+    sourceFooter:
+      "Publication éditoriale Afrilex Conseil. Les commentaires sont affichés sur ce site après envoi.",
+    ctaExplore:        "Explorer les articles",
+    readArticle:      "Lire sur ce site",
+    loadError:        "Impossible de charger les articles pour le moment.",
+    retry:            "Réessayer",
+    empty:            "Aucun article n’est disponible.",
+    backToListing:    "Tous les articles",
+    openOriginal:     "Ouvrir sur afrilexconseil.com",
+    notFound:         "Article introuvable",
+    loadingArticle:  "Chargement de l’article…",
+
+    comments: {
+      title:            "Discussion",
+      subtitle:
+        "Vos commentaires apparaissent sur ce site. L’email sert uniquement à la lutte contre le spam et n’est pas affiché.",
+      formTitle:        "Ajouter un commentaire",
+      name:             "Nom ou pseudonyme",
+      email:            "Email",
+      message:          "Votre message",
+      hintModeration:
+        "Contenu traité comme texte simple. Respect et courtoisie : tout propos hors-sujet ou injurieux pourra être retiré côté hébergement.",
+      submit:           "Publier",
+      sending:          "Envoi…",
+      success:          "Merci — votre commentaire est en ligne.",
+      error:            "Impossible de publier ce commentaire.",
+      rateLimit:        "Trop de publications depuis cette connexion. Réessayez dans une heure.",
+      empty:            "Pas encore de message. Lancez la discussion ci-dessous.",
+      loadingList:      "Chargement des messages…",
+    },
   },
 
   // ── Pricing ───────────────────────────────────────────────────────────────
@@ -221,6 +265,147 @@ const fr = {
     retry:        "Réessayer",
   },
 
+  // ── Carrières / Recrutement ───────────────────────────────────────────────
+  careers: {
+    seoDesc:
+      "Rejoignez NUMAFRIQ : parcours de recrutement transparent, culture produit & conseil, candidature en ligne avec CV.",
+    introTag: "Employeur responsable",
+    introTitle: "Faire carrière dans une équipe digitale exigeante et solidaire",
+    introSub:
+      "NUMAFRIQ conçoit des plateformes web et des dispositifs de croissance pour des marques en Afrique et à l’international. Nous cherchons des profils curieux, rigoureux et orientés impact — développement, design, SEO, gestion de projet ou contenus juridiques/editoriaux liés à notre écosystème Afrilex.",
+    pillars: [
+      {
+        title: "Clarté & feedback",
+        desc: "Des jalons de recrutement lisibles, des critères métier expliqués et un retour personnalisé lorsque votre profil est présélectionné ou lorsque nous ne donnons pas suite.",
+      },
+      {
+        title: "Montée en compétences",
+        desc: "Veille techno et design, revues de code ou de maquettes, temps d’échange avec les seniors : nous investissons dans la progression collective.",
+      },
+      {
+        title: "Hybridation maîtrisée",
+        desc: "Collaboration à distance et synchrone selon les rôles, avec des réunions structurées et des livrables documentés — modèle adapté aux équipes créatives distribuées.",
+      },
+    ],
+    openRolesTag: "Postes ouverts",
+    openRolesTitle: "Les missions pour lesquelles nous recrutons",
+    openRolesLead:
+      "Publiées depuis l’espace bureau Afrilex / NUMAFRIQ (menu « Offres emploi »). Postulez depuis la fiche ou sélectionnez un poste générique dans le formulaire ci-dessous.",
+    openRolesEmpty:
+      "Aucune offre en ligne pour le moment. Vous pouvez envoyer une candidature spontanée via le formulaire.",
+    openRolesLoadError:
+      "Impossible de charger les offres pour le moment. Le formulaire fonctionne toujours — actualisez la page ou réessayez plus tard.",
+    expandRole: "Lire la fiche complète",
+    collapseRole: "Refermer",
+    applyToRole: "Postuler à ce poste",
+    journeyTag: "Parcours RH",
+    journeyTitle: "Comment se déroule une candidature chez NUMAFRIQ ?",
+    journeySub:
+      "Process standard inspiré des bonnes pratiques RH : aucune discrimination fondée sur l’origine, le genre, l’âge ou la situation familiale ; sélection fondée sur les compétences, l’expérience et l’adéquation culturelle avec nos valeurs de clarté et de fiabilité.",
+    journeySteps: [
+      {
+        title: "Dépôt en ligne",
+        desc: "Vous complétez le formulaire ci-dessous, joignez un CV à jour (PDF ou Word) et un court argumentaire de motivation.",
+      },
+      {
+        title: "Présélection RH",
+        desc: "Nous analysons l’adéquation profil / besoins ouverts ou vivier spontané. Les dossiers incomplets peuvent être écartés.",
+      },
+      {
+        title: "Entretiens",
+        desc: "Échanges avec les opérationnels : mise en situation légère, discussion sur vos réalisations concrètes et vos modes de collaboration.",
+      },
+      {
+        title: "Décision & onboarding",
+        desc: "Proposition ou feedback constructif sous ~10–15 jours ouvrés en phase normale. En cas d’embauche : précision du périmètre, démarrage et documents administratifs.",
+      },
+    ],
+    charterTag: "Cadre & données personnelles",
+    charterTitle: "Traitement équitable et confidentialité des dossiers",
+    charterItems: [
+      "Vos données sont utilisées uniquement dans le cadre du recrutement ; pas de revente à des tiers.",
+      "Les CV sont stockés de façon sécurisée sur notre infrastructure ; accès limité aux personnes habilitées.",
+      "Vous pouvez demander la mise à jour ou la suppression de vos données en écrivant à info@numafriq.com.",
+      "Candidature spontanée bienvenue : indiquez le périmètre qui vous intéresse pour faciliter le classement interne.",
+    ],
+    formTag: "Formulaire",
+    formTitle: "Envoyer une candidature structurée",
+    formSub:
+      "Les champs marqués d’un astérisque sont obligatoires. Préparez un CV actualisé (max. 5 Mo) et un texte de motivation expliquant ce que vous apportez à NUMAFRIQ.",
+    form: {
+      firstName: "Prénom *",
+      lastName: "Nom de famille *",
+      email: "Adresse e-mail professionnelle *",
+      phone: "Téléphone / WhatsApp",
+      cityCountry: "Ville et pays de résidence",
+      linkedin: "Profil LinkedIn (URL)",
+      position: "Intitulé / famille de poste visée *",
+      contract: "Type de collaboration souhaitée *",
+      availability: "Disponibilité (préavis, date de début…)",
+      experience: "Années d’expérience professionnelle utiles au poste",
+      education: "Niveau de formation principal",
+      languages: "Langues (ex. : Français natif, Anglais C1, autre)",
+      motivation: "Lettre de motivation / projet professionnel *",
+      motivationPlaceholder:
+        "Précisez votre parcours, 2–3 réalisations dont vous êtes fier·ère, ce qui vous attire chez NUMAFRIQ / Afrilex Conseil, et vos attentes sur les 12 prochains mois (minimum ~80 caractères).",
+      cv: "Curriculum vitæ *",
+      cvHint: "PDF, DOC ou DOCX — 5 Mo maximum.",
+      removeFile: "Retirer le fichier",
+      consent:
+        "J’accepte que NUMAFRIQ traite mes données personnelles aux fins de recrutement, conformément à la politique de confidentialité du site. *",
+      submit: "Transmettre ma candidature",
+      sending: "Envoi sécurisé en cours…",
+      successTitle: "Candidature bien transmise",
+      successSub:
+        "Vérifiez votre boîte mail : un accusé de réception vient de vous être envoyé. Notre équipe étudiera votre dossier sous réserve de besoins ouverts.",
+      resetForm: "Envoyer une autre candidature",
+      errorTitle: "Échec de l’envoi",
+      retry: "Réessayer",
+      optional: "Facultatif",
+      availabilityPlaceholder: "Ex. : Immédiate / préavis 1 mois / à partir du 01/09/2026",
+      privacyNavigate: "Consulter la politique de confidentialité",
+      errors: {
+        motivationMin: "Le message doit contenir au moins 80 caractères.",
+        cvRequired: "Veuillez joindre votre CV.",
+        cvSize: "Le fichier dépasse 5 Mo.",
+        cvType: "Formats acceptés : PDF, DOC, DOCX.",
+        consent: "Vous devez accepter le traitement des données.",
+      },
+    },
+    positions: {
+      developer_fullstack: "Développement web — Full-stack / JS",
+      developer_frontend: "Développement front-end / UI Engineering",
+      developer_backend: "Développement back-end / APIs & infra",
+      designer_uiux: "Design UI/UX & système produit",
+      seo_content: "SEO, contenu & performance editoriale",
+      project_manager: "Chef·fe de projet digital / Product ops",
+      marketing_growth: "Marketing digital / Growth",
+      legal_editorial: "Contenus juridiques & éditoriaux (écosystème Afrilex)",
+      internship: "Stage ou alternance",
+      spontaneous: "Candidature spontanée — autre expertise digitale",
+    },
+    contracts: {
+      cdi: "CDI",
+      cdd: "CDD / mission définie",
+      freelance: "Freelance / prestation ponctuelle",
+      internship: "Stage / apprentissage",
+      discuss: "À discuter selon le projet",
+    },
+    experience: {
+      "0-1": "0 à 1 an",
+      "2-3": "2 à 3 ans",
+      "4-6": "4 à 6 ans",
+      "7plus": "7 ans et plus",
+    },
+    education: {
+      bac: "Bac ou équivalent",
+      bac2_3: "Bac +2 / +3",
+      bac4_5: "Bac +4 / +5",
+      bac5_plus: "Master 2 / ingénieur / Doctorat",
+      professional_track: "Parcours autodidacte avec expérience solide démontrable",
+    },
+  },
+
   // ── Testimonials ─────────────────────────────────────────────────────────
   testimonials: {
     eyebrow: "Ils nous font confiance",
@@ -270,6 +455,32 @@ const fr = {
     { tag: "Parlons de votre projet", eyebrow: "Contact & devis gratuit", title: "Votre projet\ncommence par\nune conversation.", sub: "Partagez vos objectifs, vos contraintes et votre budget. Nous revenons vers vous sous 24h avec une réponse claire et un cadrage utile.", cta: "Envoyer un message", ctaSecondary: "Voir les tarifs" },
     { tag: "Réponse sous 24h", eyebrow: "Disponible pour nouveaux projets", title: "Une équipe\nà votre écoute\net réactive.", sub: "Nos créneaux sont ouverts. Que vous ayez un projet précis ou une simple question, notre équipe vous accompagne avec clarté.", cta: "Nous écrire", ctaSecondary: "Voir nos services" },
     { tag: "Collaboration & confiance", eyebrow: "130+ projets accompagnés", title: "Rejoignez les\nmarques qui nous\nfont confiance.", sub: "NUMAFRIQ accompagne les entreprises, ONG et startups à travers l'Afrique francophone et la diaspora. À votre tour.", cta: "Démarrer maintenant", ctaSecondary: "Nos réalisations" },
+  ],
+  careersSlides: [
+    {
+      tag: "Talent & culture produit",
+      eyebrow: "Carrières NUMAFRIQ",
+      title: "Rejoignez une équipe\nqui livre avec\nméthode et exigence.",
+      sub: "Projets web, SEO et acquisition pour des marques ambitieuses. Process RH transparent, feedback régulier et environnement où la qualité du livrable prime.",
+      cta: "Voir le formulaire",
+      ctaSecondary: "Nous contacter",
+    },
+    {
+      tag: "Parcours clair",
+      eyebrow: "Recrutement structuré",
+      title: "Des étapes lisibles,\ndu dépôt de CV à\nla décision finale.",
+      sub: "Candidature en ligne, présélection, entretiens métier puis proposition ou retour personnalisé — conformément aux bonnes pratiques de gestion des talents.",
+      cta: "Postuler maintenant",
+      ctaSecondary: "À propos",
+    },
+    {
+      tag: "Afrique & diaspora",
+      eyebrow: "Remote & synchrone",
+      title: "Collaborez depuis\nOuagadougou,\nParis ou ailleurs.",
+      sub: "Équipe répartie sur plusieurs fuseaux : nous combinons standards internationaux et proximité avec les réalités des marchés francophones.",
+      cta: "Envoyer mon dossier",
+      ctaSecondary: "Blog",
+    },
   ],
 
   // ── Legal ────────────────────────────────────────────────────────────────

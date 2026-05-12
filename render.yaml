@@ -1,21 +1,26 @@
+# Blueprint Render — API Node Afrilex Conseil / NUMAFRIQ (Supabase)
+# Déploiement : Render Dashboard → New → Blueprint → connecter ce dépôt,
+# puis renseigner les variables marquées sync: false dans l’interface.
+#
+# Docs : https://render.com/docs/blueprint-spec
+
 services:
   - type: web
-    name: numafriq-api
+    name: afrilex-api
     runtime: node
-    buildCommand: npm install --omit=dev
-    startCommand: node scripts/bureau-api.cjs
+    region: frankfurt
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/bureau/health
     envVars:
-      - key: NODE_ENV
-        value: production
+      - key: NODE_VERSION
+        value: "20"
+      # Renseigner dans le tableau Environment (valeurs secrètes) :
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: GROQ_API_KEY
         sync: false
-      - key: WA_PHONE
-        value: "22656191930"
-      - key: META_ACCESS_TOKEN
-        sync: false
-      - key: META_PHONE_ID
-        sync: false
+      # Optionnel (Environment manuel) : CORS_ORIGINS, BLOG_STORE_PATH, CAREERS_OFFERS_PATH

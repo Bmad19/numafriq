@@ -12,17 +12,43 @@ async function request<T = unknown>(
   const url = new URL(`${BASE}/${endpoint}`, window.location.origin);
   if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
 
-  const res = await fetch(url.toString(), {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url.toString(), {
+      method,
+      mode: 'cors',
+      credentials: 'omit',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    let originTry = '';
+    try {
+      if (/^https?:\/\//i.test(BASE)) originTry = new URL(BASE).origin;
+    } catch {
+      /* ignore */
+    }
+    const apiHint =
+      originTry
+        ? `Vérifiez ${originTry}/api/bureau/health sur le navigateur. Si vous êtes sur votre domaine : sur Render ajoutez CORS_ORIGINS avec l’URL exacte du site (https + www ou non).`
+        : 'Refaites npm run build avec .env.production (VITE_BUREAU_API vers votre API Render). En local : npm run dev:api + .env.local.';
+    throw new Error(`Impossible de joindre l’API bureau (réseau ou CORS bloqué). ${apiHint}`);
+  }
 
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error ?? `Erreur ${res.status}`);
+  const raw = await res.text().catch(() => '');
+  let data: Record<string, unknown> = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    /* réponse HTML ou non-JSON */
+  }
+  if (!res.ok) {
+    const msg = [data.error, data.detail, data.hint].filter(Boolean).join(' — ');
+    throw new Error(msg || raw?.slice(0, 200) || `Erreur ${res.status}`);
+  }
   return data as T;
 }
 
@@ -146,15 +172,179 @@ export type Feedback = {
   status: 'nouveau'|'traite'|'archive'; created_at: string;
 };
 
+export type BureauBlogArticle = {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  body_html: string;
+  featured_image_url: string | null;
+  categories: string[];
+  published: boolean;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BureauBlogComment = {
+  id: string;
+  article_id: string;
+  author_name: string;
+  author_email: string;
+  body: string;
+  created_at: string;
+  article_title?: string;
+};
+
+export type BureauCareerOffer = {
+  id: string;
+  position_key: string;
+  title_fr: string;
+  title_en: string;
+  meta_fr: string;
+  meta_en: string;
+  summary_fr: string;
+  summary_en: string;
+  detail_fr: string;
+  detail_en: string;
+  sort_order: number;
+  published: boolean;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export const careersOffersApi = {
+  list: () =>
+    request<{ offers: BureauCareerOffer[] }>("careers-offers.php", "GET", undefined, {
+      action: "list",
+    }).then((r) => r.offers ?? []),
+
+  get: (id: string) =>
+    request<{ offer: BureauCareerOffer }>("careers-offers.php", "GET", undefined, {
+      action: "get",
+      id,
+    }).then((r) => r.offer),
+
+  create: (data: {
+    position_key: string;
+    title_fr: string;
+    title_en: string;
+    meta_fr?: string;
+    meta_en?: string;
+    summary_fr?: string;
+    summary_en?: string;
+    detail_fr?: string;
+    detail_en?: string;
+    sort_order?: number;
+    published?: boolean;
+    published_at?: string | null;
+  }) =>
+    request<{ ok: boolean; offer: BureauCareerOffer }>(
+      "careers-offers.php",
+      "POST",
+      data,
+      { action: "create" }
+    ),
+
+  update: (id: string, data: Partial<BureauCareerOffer>) =>
+    request<{ ok: boolean; offer: BureauCareerOffer }>(
+      "careers-offers.php",
+      "PUT",
+      data,
+      { action: "update", id }
+    ),
+
+  delete: (id: string) =>
+    request<{ ok: boolean }>("careers-offers.php", "DELETE", undefined, {
+      action: "delete",
+      id,
+    }),
+};
+
+export const blogArticlesApi = {
+  list: () =>
+    request<{ articles: BureauBlogArticle[] }>("blog.php", "GET", undefined, {
+      action: "list",
+    }).then((r) => r.articles ?? []),
+
+  get: (id: string) =>
+    request<{ article: BureauBlogArticle }>("blog.php", "GET", undefined, {
+      action: "get",
+      id,
+    }).then((r) => r.article),
+
+  create: (data: {
+    slug?: string;
+    title: string;
+    excerpt: string;
+    body_html: string;
+    featured_image_url?: string | null;
+    categories?: string[];
+    published?: boolean;
+    published_at?: string | null;
+  }) =>
+    request<{ ok: boolean; article: BureauBlogArticle }>(
+      "blog.php",
+      "POST",
+      data,
+      { action: "create" }
+    ),
+
+  update: (id: string, data: Partial<BureauBlogArticle>) =>
+    request<{ ok: boolean; article: BureauBlogArticle }>(
+      "blog.php",
+      "PUT",
+      data,
+      { action: "update", id }
+    ),
+
+  delete: (id: string) =>
+    request<{ ok: boolean }>("blog.php", "DELETE", undefined, {
+      action: "delete",
+      id,
+    }),
+
+  commentsList: (articleId?: string) =>
+    request<{ comments: BureauBlogComment[] }>("blog.php", "GET", undefined, {
+      action: "comments_list",
+      ...(articleId ? { article_id: articleId } : {}),
+    }).then((r) => r.comments ?? []),
+
+  commentDelete: (commentId: string) =>
+    request<{ ok: boolean }>("blog.php", "DELETE", undefined, {
+      action: "comment_delete",
+      id: commentId,
+    }),
+};
+
 // ── Leads (demandes de projet depuis le formulaire contact) ───────────────────
 export type Lead = {
   id: number; name: string; email: string; phone?: string; company?: string;
   service?: string; budget?: string; timeline?: string; message: string;
-  status: 'nouveau' | 'en_cours' | 'converti' | 'perdu';
+  status: 'nouveau' | 'en_cours' | 'converti' | 'perdu' | 'archive';
   assigned_to?: number; agent_name?: string; notes?: string;
-  created_at: string; updated_at: string;
+  created_at: string; updated_at?: string;
 };
-export type LeadStats = { total: number; nouveau: number; en_cours: number; converti: number };
+export type LeadStats = {
+  total: number;
+  nouveau: number;
+  en_cours: number;
+  converti: number;
+  perdu: number;
+  archive: number;
+};
+
+export type AssistantMode = 'assist' | 'memo_litige';
+export type AssistantMessage = { role: 'user' | 'assistant'; content: string };
+
+export const assistantApi = {
+  chat: (body: {
+    mode: AssistantMode;
+    messages: AssistantMessage[];
+    dossier_summary?: string;
+  }) => request<{ reply: string; mode: AssistantMode }>('assistant.php', 'POST', body),
+};
 
 export const leadsApi = {
   list:   () => request<Lead[]>('leads.php', 'GET', undefined, { action: 'list' }),

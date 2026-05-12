@@ -164,12 +164,38 @@ CREATE TABLE IF NOT EXISTS leads (
   timeline    TEXT,
   message     TEXT NOT NULL,
   status      TEXT DEFAULT 'nouveau'
-              CHECK (status IN ('nouveau','en_cours','converti','perdu')),
+              CHECK (status IN ('nouveau','en_cours','converti','perdu','archive')),
   assigned_to BIGINT REFERENCES users(id) ON DELETE SET NULL,
   notes       TEXT,
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- ── Candidatures (formulaire carrières — API Node /api/careers.php) ───────────
+CREATE TABLE IF NOT EXISTS job_applications (
+  id                      BIGSERIAL PRIMARY KEY,
+  first_name              TEXT NOT NULL,
+  last_name               TEXT NOT NULL,
+  email                   TEXT NOT NULL,
+  phone                   TEXT,
+  city_country            TEXT,
+  linkedin_url            TEXT,
+  position_applied        TEXT NOT NULL,
+  contract_type           TEXT NOT NULL,
+  availability            TEXT,
+  experience_years        TEXT,
+  education_level         TEXT,
+  languages               TEXT,
+  motivation              TEXT NOT NULL,
+  cv_original_name        TEXT,
+  cv_mime                 TEXT,
+  cv_data                 BYTEA NOT NULL,
+  locale                  TEXT NOT NULL DEFAULT 'fr',
+  consent_data_processing BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at              TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS job_applications_position_idx ON job_applications(position_applied);
+CREATE INDEX IF NOT EXISTS job_applications_created_idx ON job_applications(created_at DESC);
 
 -- ══════════════════════════════════════════════════════════════════════════════
 -- TRIGGERS — updated_at automatique
@@ -207,10 +233,11 @@ ALTER TABLE clients         DISABLE ROW LEVEL SECURITY;
 ALTER TABLE client_sessions DISABLE ROW LEVEL SECURITY;
 ALTER TABLE client_messages DISABLE ROW LEVEL SECURITY;
 ALTER TABLE leads           DISABLE ROW LEVEL SECURITY;
+ALTER TABLE job_applications DISABLE ROW LEVEL SECURITY;
 
 -- ══════════════════════════════════════════════════════════════════════════════
 -- DONNÉES INITIALES — Super admin
--- Le mot de passe "dinar" est hashé par le serveur Node.js au premier démarrage.
+-- Le compte super admin bureau « sagnon » est créé au premier démarrage de bureau-api.cjs (hash bcrypt).
 -- ══════════════════════════════════════════════════════════════════════════════
 -- (Le seed est fait automatiquement par bureau-api.cjs au démarrage)
 
