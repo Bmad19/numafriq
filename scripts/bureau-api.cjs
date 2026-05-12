@@ -252,7 +252,7 @@ async function migrateDinarToSagnonIfNeeded() {
   if (hasSagnon?.id) return;
   const { data: dinar } = await supabase.from('users').select('id').eq('username', 'dinar').maybeSingle();
   if (!dinar?.id) return;
-  const hash = bcrypt.hashSync('sagnon', 12);
+  const hash = bcrypt.hashSync('SAGNON', 12);
   await supabase
     .from('users')
     .update({
@@ -262,7 +262,7 @@ async function migrateDinarToSagnonIfNeeded() {
       email: 'cabinet@afrilexconseil.com',
     })
     .eq('id', dinar.id);
-  console.log('✅ Compte bureau : « dinar » → « sagnon » (mot de passe : sagnon)');
+  console.log('✅ Compte bureau : « dinar » → « sagnon » (mot de passe : SAGNON)');
 }
 
 // ── Seed initial ──────────────────────────────────────────────────────────────
@@ -270,7 +270,7 @@ async function seedIfEmpty() {
   const { count } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('username', 'sagnon');
   if (count > 0) return;
 
-  const hash = bcrypt.hashSync('sagnon', 12);
+  const hash = bcrypt.hashSync('SAGNON', 12);
   const { data: admin } = await supabase
     .from('users')
     .insert({
@@ -295,7 +295,7 @@ async function seedIfEmpty() {
     { type: 'depense', category: 'Logiciels', amount: 45000,  description: 'Adobe CC',             date: '2026-04-01', created_by: aid },
   ]);
 
-  console.log('✅ Super admin bureau « sagnon » créé (mot de passe : sagnon — à changer en production)');
+  console.log('✅ Super admin bureau « sagnon » créé (mot de passe : SAGNON — à changer en production)');
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1897,7 +1897,7 @@ migrateDinarToSagnonIfNeeded()
       console.log(`   📱 WhatsApp : +${WA_PHONE}`);
       if (!META_ACCESS_TOKEN) console.log('   ⚠️  WhatsApp → console (dev mode)');
       console.log('');
-      console.log('   Connexion bureau : identifiant « sagnon » ou « SAGNON » (sans casse), mot de passe « sagnon » ou « SAGNON » — changez en prod.\n');
+      console.log('   Connexion bureau : utilisateur « sagnon » ou « SAGNON » (identifiant sans casse), mot de passe : « SAGNON » — changez en prod.\n');
     });
   })
   .catch((err) => {

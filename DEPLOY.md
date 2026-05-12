@@ -20,7 +20,7 @@ Cochez mentalement chaque point avant de passer au suivant.
 | **A3b** | Table candidatures *(bases déjà créées)* | Si le projet Supabase existait **avant** l’ajout de **`job_applications`**, exécutez **`sql/supabase_job_applications.sql`**. Sinon **A3** suffit. |
 | **A4** *(optionnel)* | Commentaires blog Afrilex | Si vous utilisez les commentaires SPA sur les articles WordPress : exécutez aussi **`scripts/sql/afrilex_blog_comments.sql`** dans SQL Editor. |
 
-À ce stade la base est prête ; il n’y a pas encore d’utilisateur : le compte bureau **`sagnon`** / **`sagnon`** (ou **`SAGNON`** / **`SAGNON`** — la casse de l’identifiant est ignorée) sera créé ou migré au **premier démarrage réussi** de l’API (étape B).
+À ce stade la base est prête ; il n’y a pas encore d’utilisateur : le compte bureau **`sagnon`** / **`SAGNON`** (identifiant **`sagnon`** ou **`SAGNON`**, mot de passe **`SAGNON`**) sera créé ou migré au **premier démarrage réussi** de l’API (étape B).
 
 ---
 
@@ -77,7 +77,7 @@ npm run build
 |---|------|------------------|
 | **E1** | Ouvrir votre domaine | La page d’accueil s’affiche. |
 | **E2** | Onglet **Réseau** (F12) sur Contact / Chat | Pas d’erreur **CORS** vers l’URL Render ; réponses **200** ou **401** contrôlées, pas **blocked**. |
-| **E3** | **/bureau** | Connexion **`SAGNON`** / **`SAGNON`** ou **`sagnon`** / **`sagnon`** (identifiant sans casse). Publiez des articles (**Blog site**) et des offres (**Offres emploi** → **`/bureau/recrutement`**). Changez le mot de passe en production dès la première connexion. |
+| **E3** | **/bureau** | Connexion identifiant **`SAGNON`** ou **`sagnon`**, mot de passe **`SAGNON`**. Publiez des articles (**Blog site**) et des offres (**Offres emploi**). Changez le mot de passe en production dès la première connexion. |
 | **E4** | Formulaire contact | Lead reçu (et notification WhatsApp si vous avez configuré Meta côté API). |
 
 Si **CORS** bloque : sur Render, ajoutez **`CORS_ORIGINS`** avec l’URL **exacte** du site (`https://www.votredomaine.com` **et** `https://votredomaine.com` si les deux existent).
@@ -87,7 +87,7 @@ Si **CORS** bloque : sur Render, ajoutez **`CORS_ORIGINS`** avec l’URL **exact
 ## Rappels importants
 
 - **`SUPABASE_SERVICE_ROLE_KEY`** : uniquement sur le serveur Node (Render), jamais dans le code React ni dans `.env.production`.
-- **`sagnon` / `sagnon`** : compte technique initial (**`SAGNON`** accepté en identifiant) ; changez le mot de passe dès que le bureau fonctionne.
+- **`sagnon` / `SAGNON`** : compte technique initial (identifiant sans casse, mot de passe **`SAGNON`**) ; changez-le en production dès que le bureau fonctionne.
 - Fichiers utiles dans le repo : **`env.example`** (variables expliquées), **`render.yaml`** (Blueprint Render), **`scripts/verify-production-env.mjs`** (vérif avant build).
 
 ---
@@ -133,7 +133,7 @@ Si une ancienne base bloque sur le statut `archive` des leads : **`sql/supabase_
 | Symptôme | Piste |
 |----------|--------|
 | Erreur CORS dans la console | `CORS_ORIGINS` ; même schéma `https://` ; `www` vs sans `www`. |
-| Bureau / login 500 | Logs Render ; **`GET .../api/bureau/health`** ; réexécuter **`sql/supabase-setup.sql`**. |
+| Bureau : mot de passe refusé après déploiement | Nouveaux seeds : **`SAGNON`**. Ancien compte avec mot de passe **`sagnon`** : connectez-vous encore avec **`sagnon`** ou mettez à jour le hash dans **`users`** (Supabase). |
 | Chat ou contact sans réponse | **`GROQ_API_KEY`** définie sur le service Node. |
 | Routes React → 404 Apache | **`.htaccess`** à la racine du site ; `mod_rewrite` activé. |
 | `npm run build` refuse | `.env.production` manquant ou encore **`VOTRE-API.example.com`**. |
