@@ -1,5 +1,5 @@
 // ══════════════════════════════════════════════════════════════════════════════
-// NUMAFRIQ Bureau — API Express + Supabase (PostgreSQL)
+// Afrilex Conseil — API Express + Supabase (PostgreSQL)
 // Lancer : node scripts/bureau-api.cjs  |  npm run dev:api
 // ══════════════════════════════════════════════════════════════════════════════
 'use strict';
@@ -74,14 +74,54 @@ const app = express();
 const ALLOWED_ORIGINS = [
   'https://numafriq.com',
   'https://www.numafriq.com',
+  'https://afrilexconseil.com',
+  'https://www.afrilexconseil.com',
   'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:3100',
   'http://localhost:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3100',
+  'http://127.0.0.1:5173',
 ];
+/** Tout origine http(s)://localhost:port — pratique dev (Vite peut changer de port si le port demandé est pris). */
+const LOCALHOST_DEV_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/;
+/** Par défaut autorise localhost:any port ; désactivez avec AFRILEX_RELAX_LOCAL_CORS=0 en prod stricte */
+const RELAX_LOCALHOST_CORS = process.env.AFRILEX_RELAX_LOCAL_CORS !== '0';
+/** Sites vitrine et sous-domaines (évite Failed to fetch si www vs apex déjà OK mais autre sous-domaine). */
+const DEFAULT_SITE_ORIGIN =
+  /^https?:\/\/([a-z0-9-]+\.)*(afrilexconseil\.com|numafriq\.com)(:\d+)?$/i;
+
+function corsRegexList() {
+  const raw = process.env.CORS_ORIGIN_PATTERNS || '';
+  return raw
+    .split(/[,;\n]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((p) => {
+      try {
+        return new RegExp(p);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+}
+const CORS_REGEXES = corsRegexList();
+
+const EXTRA_CORS = (process.env.CORS_ORIGINS || '')
+  .split(/[\s,]+/)
+  .map((s) => s.trim())
+  .filter(Boolean);
 app.use(cors({
   origin: (origin, cb) => {
-    // Autoriser les requêtes sans origin (Postman, server-to-server) et les origines listées
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-    cb(new Error(`CORS bloqué : ${origin}`));
+    if (!origin) return cb(null, true);
+    if (ALLOWED_ORIGINS.includes(origin) || EXTRA_CORS.includes(origin)) return cb(null, true);
+    if (RELAX_LOCALHOST_CORS && LOCALHOST_DEV_ORIGIN.test(origin)) return cb(null, true);
+    if (DEFAULT_SITE_ORIGIN.test(origin)) return cb(null, true);
+    if (CORS_REGEXES.some((re) => re.test(origin))) return cb(null, true);
+    console.warn('[cors] origine refusée (CORS_ORIGINS ou CORS_ORIGIN_PATTERNS sur Render) :', origin);
+    return cb(null, false);
   },
   credentials: true,
 }));
@@ -97,6 +137,21 @@ app.use((_req, res, next) => {
   next();
 });
 
+// Diagnostic : ouvrir GET http://localhost:3100/api/bureau/health (via proxy Vite) ou http://localhost:8080/api/bureau/health
+app.get('/api/bureau/health', async (_req, res) => {
+  try {
+    const { error: uErr } = await supabase.from('users').select('id').limit(1);
+    const { error: sErr } = await supabase.from('sessions').select('id').limit(1);
+    const issues = [];
+    if (uErr) issues.push(`users: ${uErr.message}`);
+    if (sErr) issues.push(`sessions: ${sErr.message}`);
+    if (issues.length) return res.status(503).json({ ok: false, issues });
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e?.message || e) });
+  }
+});
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const makeToken  = () => crypto.randomBytes(32).toString('hex');
 const in8h       = () => new Date(Date.now() + 8  * 3600_000).toISOString();
@@ -104,18 +159,28 @@ const in12h      = () => new Date(Date.now() + 12 * 3600_000).toISOString();
 const now        = () => new Date().toISOString();
 const ROLES      = { agent: 1, admin: 2, super_admin: 3 };
 
+/** Évite une exception bcryptjs (« Illegal arguments ») si hash absent ou invalide — sinon erreur HTTP 500 au login. */
+function safeComparePassword(plain, hash) {
+  if (plain == null || hash == null || typeof hash !== 'string' || hash.length < 20) return false;
+  try {
+    return bcrypt.compareSync(String(plain), hash);
+  } catch {
+    return false;
+  }
+}
+
 // Auth guard bureau — retourne user ou null (envoie la réponse si erreur)
 async function authGuard(req, res, minRole = 'agent') {
   const m = (req.headers.authorization ?? '').match(/^Bearer\s+(.+)$/i);
   if (!m) { res.status(401).json({ error: 'Non authentifié' }); return null; }
 
-  const { data: sess } = await supabase
+  const { data: sess, error: sessErr } = await supabase
     .from('sessions')
     .select('expires_at, user:users!user_id(id,username,full_name,email,role,active,first_login,avatar,password)')
     .eq('token', m[1])
-    .single();
+    .maybeSingle();
 
-  if (!sess || new Date(sess.expires_at) < new Date() || !sess.user?.active) {
+  if (sessErr || !sess || new Date(sess.expires_at) < new Date() || !sess.user?.active) {
     res.status(401).json({ error: 'Session expirée' });
     return null;
   }
@@ -164,85 +229,348 @@ async function agentTokenGuard(req, res) {
   return sess.user;
 }
 
-// ── Seed initial ──────────────────────────────────────────────────────────────
-async function seedIfEmpty() {
-  const { count } = await supabase.from('users').select('*', { count: 'exact', head: true }).eq('username', 'dinar');
-  if (count > 0) return;
 
-  const hash = bcrypt.hashSync('dinar', 12);
-  const { data: admin } = await supabase
-    .from('users')
-    .insert({ username: 'dinar', password: hash, full_name: 'Super Administrateur', email: 'admin@numafriq.com', role: 'super_admin', first_login: true, active: true })
+
+/** Aligné avec api/contact.php — domain pour assignation pôle métier */
+function resolveLeadDomain(service) {
+  const s = String(service ?? '').trim().toLowerCase();
+  const dm = {
+    'non précisé':       'non_classe',
+    'non precisé':       'non_classe',
+    'conseil-juridique': 'juridique',
+    fiscalite:           'fiscal',
+    fiscalité:           'fiscal',
+    comptabilite:        'comptabilite',
+    comptabilité:        'comptabilite',
+    structuration:       'structuration',
+    investissement:      'investissement',
+    autre:               'autre',
+  };
+  return dm[s] || 'non_classe';
+}
+
+function walkKbMarkdownFiles(absDir, relBase, collected) {
+  if (!fs.existsSync(absDir)) return;
+  for (const ent of fs.readdirSync(absDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const abs = path.join(absDir, ent.name);
+    const rel = path.join(relBase, ent.name).replace(/\\/g, '/');
+    if (ent.isDirectory()) walkKbMarkdownFiles(abs, rel, collected);
+    else if (ent.name.endsWith('.md')) {
+      try {
+        collected.push({ rel, body: fs.readFileSync(abs, 'utf8') });
+      } catch {
+        /* ignore fichiers illisibles */
+      }
+    }
+  }
+}
+
+function loadKbBureauMarkdown(maxLen = 32000) {
+  const kbDir = path.join(__dirname, '..', 'api', 'bureau', 'kb');
+  const chunks = [];
+  walkKbMarkdownFiles(kbDir, '', chunks);
+  chunks.sort((a, b) => a.rel.localeCompare(b.rel));
+  let buf = '';
+  for (const { rel, body } of chunks) {
+    buf += `\n\n<!-- ${rel || 'racine'} -->\n${body}`;
+    if (buf.length > maxLen) break;
+  }
+  return buf.length > maxLen ? buf.slice(0, maxLen) + '\n\n… [tronqué pour limite tokens]' : buf;
+}
+
+/** memo_litige → même pipeline que mémoire de défense (synonyme métier). */
+function normalizeAssistantMode(mode) {
+  const m = String(mode ?? 'assist').trim().toLowerCase();
+  if (m === 'memo_litige') return 'memo_defense';
+  return m === 'memo_defense' ? 'memo_defense' : 'assist';
+}
+
+const ASSISTANT_MAX_MSG_CHARS = 12000;
+function sanitizeAssistantMessages(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const item of raw.slice(-20)) {
+    if (!item || typeof item !== 'object') continue;
+    const role = item.role;
+    if (role !== 'user' && role !== 'assistant') continue;
+    let content = typeof item.content === 'string' ? item.content.replace(/\u0000/g, '').trim() : '';
+    if (content.length > ASSISTANT_MAX_MSG_CHARS) {
+      content = content.slice(0, ASSISTANT_MAX_MSG_CHARS) + '\n… [message tronqué]';
+    }
+    if (!content) continue;
+    out.push({ role, content });
+  }
+  return out.slice(-14);
+}
+
+function userHandlesLeadDomain(practiceCsv, leadDomain) {
+  const ld = String(leadDomain || '').trim().toLowerCase();
+  if (!ld || ld === 'non_classe') return true;
+  const csv = String(practiceCsv || '').trim().toLowerCase();
+  if (!csv) return true;
+  const parts = csv.split(/[,;/|]/).map((s) => s.trim()).filter(Boolean);
+  return parts.some((p) => p === '*' || p === 'tous' || p === ld);
+}
+
+/** Premier agent dont les pôles couvrent le domaine du lead (sinon null). */
+async function pickAssigneeUserIdForDomain(domain) {
+  try {
+    const d = String(domain ?? '').trim().toLowerCase();
+    if (!d || d === 'non_classe') return null;
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, practice_domains')
+      .eq('active', true)
+      .in('role', ['agent', 'admin']);
+    if (error) return null;
+    const cand = (data ?? []).filter((u) => userHandlesLeadDomain(u.practice_domains, d));
+    return cand[0]?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Hash bcrypt pré-calculé — mot de passe : AfrilexBureau2026! (compte secours « afrilex_agent », changer en production). */
+const BOOTSTRAP_AFRILEX_AGENT_HASH =
+  '$2b$12$10Pkk3gCJOHWmt8mKnJjuuuCEOvSEJL7J/pwGKNCtMndn5X68NRMG';
+
+/** Hash bcrypt : mot de passe initial « SAGNON » (majuscules). Rotation obligatoire en production. */
+const BOOTSTRAP_SAGNON_HASH =
+  '$2b$12$neroZBVpVUyy9dg0Wvnaau7jpfjn/IViI9p6EO8xKZ.Tatfqyp8pS';
+
+/** Base vide uniquement — crée données démo cabinet + administrateur système prévu hors documentation publique du secret. */
+async function seedCabinetDemoIfTotallyEmpty() {
+  const { count: uc } = await supabase.from('users').select('*', { count: 'exact', head: true });
+  if (uc > 0) return;
+
+  await supabase.from('users').insert({
+    username: 'sagnon',
+    password: BOOTSTRAP_SAGNON_HASH,
+    full_name: 'Administrateur Afrilex',
+    email: 'cabinet@afrilexconseil.com',
+    role: 'super_admin',
+    first_login: false,
+    active: true,
+    practice_domains: null,
+  });
+  const { data: admin } = await supabase.from('users').select('id').eq('username', 'sagnon').single();
+  const aid = admin?.id ?? 1;
+
+  const { data: p1 } = await supabase
+    .from('projects')
+    .insert({
+      name: 'Révision groupement consortium',
+      client: 'Client confidentiel',
+      description: 'Structuration projet et défense pré-contentieuse.',
+      status: 'en_cours',
+      priority: 'haute',
+      budget: 0,
+      progress: 40,
+      created_by: aid,
+    })
     .select().single();
 
-  if (!admin) return;
-  const aid = admin.id;
-
-  const { data: p1 } = await supabase.from('projects').insert({ name: 'Site vitrine Telecel', client: 'Telecel Faso', description: 'Refonte site corporate', status: 'en_cours', priority: 'haute', budget: 850000, progress: 65, created_by: aid }).select().single();
-  const { data: p2 } = await supabase.from('projects').insert({ name: 'E-commerce BarkaPro', client: 'BarkaPro', description: 'Boutique en ligne', status: 'en_cours', priority: 'normale', budget: 1200000, progress: 40, created_by: aid }).select().single();
-
-  await supabase.from('accounting').insert([
-    { type: 'recette', category: 'Projet',    amount: 850000, description: 'Acompte Telecel Faso', date: '2026-04-01', created_by: aid, project_id: p1?.id },
-    { type: 'depense', category: 'Logiciels', amount: 45000,  description: 'Adobe CC',             date: '2026-04-01', created_by: aid },
+  await supabase.from('projects').insert([
+    {
+      name: 'Contentieux créance commerciale',
+      client: 'Client confidentiel',
+      description: 'Préparation pièces sous cadre OHADA — synthèses internes.',
+      status: 'en_cours',
+      priority: 'normale',
+      budget: 0,
+      progress: 25,
+      created_by: aid,
+    },
   ]);
 
-  console.log('✅ Super admin "dinar" créé (mot de passe : dinar)');
+  await supabase.from('accounting').insert([
+    {
+      type: 'recette',
+      category: 'Honoraires',
+      amount: 0,
+      description: 'À personnaliser (exemple démo vide)',
+      date: '2026-01-15',
+      created_by: aid,
+      project_id: p1?.id ?? null,
+    },
+  ]);
+
+  console.log(
+    '\n✅ Base Supabase initialisée (cabinet) : compte super_admin « sagnon » — mot de passe initial : SAGNON (à changer tout de suite en production).\n'
+  );
+}
+
+async function ensureBootstrapAdminExists() {
+  const { data: row } = await supabase.from('users').select('id').eq('username', 'sagnon').maybeSingle();
+  if (row?.id) {
+    if (process.env.AFRILEX_LOCAL_SYNC_SAGNON === '1') {
+      await supabase
+        .from('users')
+        .update({ password: BOOTSTRAP_SAGNON_HASH, active: true, first_login: false })
+        .eq('id', row.id);
+      console.log('🔧 AFRILEX_LOCAL_SYNC_SAGNON=1 — hash mot de passe « sagnon » réaligné sur le bootstrap (SAGNON). Retirez la variable après la première connexion réussie.');
+    }
+    return;
+  }
+  await supabase.from('users').insert({
+    username: 'sagnon',
+    password: BOOTSTRAP_SAGNON_HASH,
+    full_name: 'Administrateur Afrilex',
+    email: 'cabinet@afrilexconseil.com',
+    role: 'super_admin',
+    first_login: false,
+    active: true,
+    practice_domains: null,
+  });
+  console.log('✅ Compte « sagnon » ajouté — identifiant : sagnon ou SAGNON ; mot de passe initial : SAGNON');
+}
+
+/** Compte bureau de secours (identifiant afrilex_agent) — créé si absent ; mot de passe réaligné si AFRILEX_SYNC_AGENT_LOGIN=1 */
+async function ensureAfrilexAgentBootstrapUser() {
+  const username = 'afrilex_agent';
+  const { data: row } = await supabase.from('users').select('id').eq('username', username).maybeSingle();
+  const payload = {
+    username,
+    password: BOOTSTRAP_AFRILEX_AGENT_HASH,
+    full_name: 'Agent bureau Afrilex',
+    email: 'agent@afrilexconseil.com',
+    role: 'super_admin',
+    first_login: false,
+    active: true,
+    practice_domains: null,
+  };
+  if (!row?.id) {
+    const { error } = await supabase.from('users').insert(payload);
+    if (error) {
+      console.error('ensureAfrilexAgentBootstrapUser insert:', error);
+      return;
+    }
+    console.log('✅ Compte secours « afrilex_agent » créé — mot de passe : AfrilexBureau2026! (à changer en production)');
+    return;
+  }
+  if (process.env.AFRILEX_SYNC_AGENT_LOGIN === '1') {
+    await supabase
+      .from('users')
+      .update({ password: BOOTSTRAP_AFRILEX_AGENT_HASH, active: true, first_login: false })
+      .eq('id', row.id);
+    console.log('🔧 AFRILEX_SYNC_AGENT_LOGIN=1 — mot de passe « afrilex_agent » réinitialisé sur le hash bootstrap.');
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// AUTH BUREAU
+// AUTH BUREAU — aligné route + méthode HTTP (login POST, me GET, profile PUT)
 // ══════════════════════════════════════════════════════════════════════════════
-app.post('/api/bureau/auth.php', async (req, res) => {
-  const { action } = req.query;
+app.all('/api/bureau/auth.php', async (req, res) => {
+  try {
+    const { action } = req.query;
+    const method = req.method;
 
   // ── Login ──────────────────────────────────────────────────────────────────
-  if (action === 'login') {
-    const { username, password } = req.body;
-    const { data: user } = await supabase.from('users').select('*').eq('username', username).eq('active', true).single();
-    if (!user || !bcrypt.compareSync(password, user.password))
-      return res.status(401).json({ error: 'Identifiants incorrects' });
+  if (method === 'POST' && action === 'login') {
+    try {
+      const rawUser = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
+      const password = req.body?.password != null ? String(req.body.password) : '';
+      const uname = rawUser.toLowerCase();
+      if (!rawUser || !password)
+        return res.status(400).json({ error: 'Identifiants requis' });
 
-    const token = makeToken();
-    await supabase.from('sessions').insert({ user_id: user.id, token, expires_at: in8h() });
-    await supabase.from('users').update({ last_login: now() }).eq('id', user.id);
-    return res.json({ token, first_login: !!user.first_login, user: { id: user.id, username: user.username, full_name: user.full_name, email: user.email, role: user.role, avatar: user.avatar } });
+      const { data: user, error: selErr } = await supabase
+        .from('users')
+        .select('*')
+        .eq('username', uname)
+        .eq('active', true)
+        .maybeSingle();
+
+      if (selErr) {
+        console.error('auth login select:', selErr);
+        return res.status(500).json({ error: 'Erreur serveur (utilisateur)', detail: selErr.message });
+      }
+
+      if (!user || !safeComparePassword(password, user.password))
+        return res.status(401).json({ error: 'Identifiants incorrects' });
+
+      const token = makeToken();
+      const { error: insErr } = await supabase.from('sessions').insert({
+        user_id: user.id,
+        token,
+        expires_at: in8h(),
+      });
+      if (insErr) {
+        console.error('auth login session:', insErr);
+        return res.status(500).json({
+          error: 'Impossible de créer la session',
+          detail: insErr.message || String(insErr),
+          hint: 'Vérifiez la table sessions (sql) et les clés étrangères user_id → users.id.',
+        });
+      }
+
+      await supabase.from('users').update({ last_login: now() }).eq('id', user.id);
+
+      return res.json({
+        token,
+        first_login: !!user.first_login,
+        user: {
+          id: Number(user.id),
+          username: user.username,
+          full_name: user.full_name,
+          email: user.email,
+          role: user.role,
+          avatar: user.avatar ?? null,
+        },
+      });
+    } catch (e) {
+      console.error('auth login:', e);
+      return res.status(500).json({ error: 'Erreur serveur', detail: String(e?.message || e) });
+    }
   }
 
   // ── Logout ─────────────────────────────────────────────────────────────────
-  if (action === 'logout') {
+  if (method === 'POST' && action === 'logout') {
     const m = (req.headers.authorization ?? '').match(/Bearer\s+(.+)/i);
     if (m) await supabase.from('sessions').delete().eq('token', m[1]);
     return res.json({ success: true });
   }
 
   // ── Me ─────────────────────────────────────────────────────────────────────
-  if (action === 'me') {
+  if (method === 'GET' && action === 'me') {
     const u = await authGuard(req, res); if (!u) return;
-    return res.json({ id: u.id, username: u.username, full_name: u.full_name, email: u.email, role: u.role, avatar: u.avatar, first_login: !!u.first_login });
+    return res.json({
+      id: Number(u.id),
+      username: u.username,
+      full_name: u.full_name,
+      email: u.email,
+      role: u.role,
+      avatar: u.avatar,
+      first_login: !!u.first_login,
+    });
   }
 
   // ── Change password ────────────────────────────────────────────────────────
-  if (action === 'change_password') {
+  if (method === 'POST' && action === 'change_password') {
     const u = await authGuard(req, res); if (!u) return;
-    const { new_password, old_password } = req.body;
-    if (!new_password || new_password.length < 6) return res.status(400).json({ error: 'Mot de passe trop court (min 6)' });
-    if (!u.first_login && !bcrypt.compareSync(old_password ?? '', u.password))
-      return res.status(401).json({ error: 'Ancien mot de passe incorrect' });
-    await supabase.from('users').update({ password: bcrypt.hashSync(new_password, 12), first_login: false }).eq('id', u.id);
-    return res.json({ success: true });
-  }
+      const { new_password, old_password } = req.body;
+      if (!new_password || new_password.length < 6) return res.status(400).json({ error: 'Mot de passe trop court (min 6)' });
+      if (!u.first_login && !safeComparePassword(old_password ?? '', u.password))
+        return res.status(401).json({ error: 'Ancien mot de passe incorrect' });
+      await supabase.from('users').update({ password: bcrypt.hashSync(new_password, 12), first_login: false }).eq('id', u.id);
+      return res.json({ success: true });
+    }
 
   // ── Update profile ─────────────────────────────────────────────────────────
-  if (action === 'profile') {
+  if (method === 'PUT' && action === 'profile') {
     const u = await authGuard(req, res); if (!u) return;
-    const { username, full_name, email } = req.body;
-    const { data: dup } = await supabase.from('users').select('id').eq('username', username).neq('id', u.id).maybeSingle();
-    if (dup) return res.status(409).json({ error: "Nom d'utilisateur déjà pris" });
-    await supabase.from('users').update({ username, full_name, email }).eq('id', u.id);
-    return res.json({ success: true });
-  }
+      const { username, full_name, email } = req.body;
+      const { data: dup } = await supabase.from('users').select('id').eq('username', username).neq('id', u.id).maybeSingle();
+      if (dup) return res.status(409).json({ error: "Nom d'utilisateur déjà pris" });
+      await supabase.from('users').update({ username, full_name, email }).eq('id', u.id);
+      return res.json({ success: true });
+    }
 
-  res.status(404).json({ error: 'Action non trouvée' });
+  return res.status(404).json({ error: 'Action non trouvée' });
+  } catch (e) {
+    console.error('POST /api/bureau/auth.php', e);
+    if (!res.headersSent) res.status(500).json({ error: 'Erreur serveur auth', detail: String(e?.message || e) });
+  }
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -254,24 +582,40 @@ app.all('/api/bureau/users.php', async (req, res) => {
   if (action === 'list') {
     const u = await authGuard(req, res, 'admin'); if (!u) return;
     const { data } = await supabase.from('users')
-      .select('id,username,full_name,email,role,avatar,active,created_at,last_login')
+      .select('id,username,full_name,email,practice_domains,role,avatar,active,created_at,last_login')
       .order('role', { ascending: false }).order('full_name');
     return res.json(data ?? []);
   }
 
   if (action === 'create' && req.method === 'POST') {
     const u = await authGuard(req, res, 'super_admin'); if (!u) return;
-    const { username, full_name, email, role, password } = req.body;
+    const { username, full_name, email, role, password, practice_domains } = req.body;
     if (!username || !full_name || !password) return res.status(400).json({ error: 'Champs requis manquants' });
-    const { error } = await supabase.from('users').insert({ username, password: bcrypt.hashSync(password, 12), full_name, email: email || null, role: role || 'agent', first_login: true, active: true });
+    const pd =
+      typeof practice_domains === 'string' && practice_domains.trim() !== ''
+        ? practice_domains.trim().slice(0, 512).replace(/\s+/g, ' ')
+        : null;
+    const { error } = await supabase.from('users').insert({ username, password: bcrypt.hashSync(password, 12), full_name, email: email || null, practice_domains: pd, role: role || 'agent', first_login: true, active: true });
     if (error) return res.status(409).json({ error: "Ce nom d'utilisateur existe déjà" });
     return res.json({ success: true });
   }
 
   if (action === 'update' && req.method === 'PUT') {
     const u = await authGuard(req, res, 'super_admin'); if (!u) return;
-    const { username, full_name, email, role, active } = req.body;
-    await supabase.from('users').update({ username, full_name, email, role, active: active ?? true }).eq('id', +id);
+    const { username, full_name, email, role, active, practice_domains } = req.body;
+    const pd =
+      typeof practice_domains === 'string'
+        ? (practice_domains.trim() === '' ? null : practice_domains.trim().slice(0, 512).replace(/\s+/g, ' '))
+        : undefined;
+    const row = {
+      username,
+      full_name,
+      email,
+      role,
+      active: active ?? true,
+      ...(pd !== undefined ? { practice_domains: pd } : {}),
+    };
+    await supabase.from('users').update(row).eq('id', +id);
     return res.json({ success: true });
   }
 
@@ -284,7 +628,10 @@ app.all('/api/bureau/users.php', async (req, res) => {
 
   if (action === 'reset_password' && req.method === 'POST') {
     const u = await authGuard(req, res, 'super_admin'); if (!u) return;
-    await supabase.from('users').update({ password: bcrypt.hashSync(req.body.password || 'Numafriq2026!', 12), first_login: true }).eq('id', +id);
+    const nw = req.body.password;
+    if (!nw || typeof nw !== 'string' || nw.length < 8)
+      return res.status(422).json({ error: 'Mot de passe trop court (min 8 caractères)' });
+    await supabase.from('users').update({ password: bcrypt.hashSync(nw, 12), first_login: true }).eq('id', +id);
     return res.json({ success: true });
   }
 
@@ -528,7 +875,8 @@ app.all('/api/bureau/messages.php', async (req, res) => {
       .select('channel, sender_id')
       .like('channel', 'dm:%')
       .gt('id', +(req.query.since_id || 0));
-    const unread: Record<string, number> = {};
+    /** @type {Record<string, number>} */
+    const unread = {};
     (data ?? []).forEach(m => {
       const parts = String(m.channel).replace('dm:', '').split('-');
       if (parts.includes(String(u.id)) && String(m.sender_id) !== String(u.id)) {
@@ -591,19 +939,46 @@ app.all('/api/bureau/leads.php', async (req, res) => {
 
   if (action === 'stats') {
     const u = await authGuard(req, res); if (!u) return;
-    const [{ count: total }, { count: nouveau }, { count: en_cours }, { count: converti }] = await Promise.all([
+    const ck = async (st) =>
+      supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', st);
+    const [{ count: total }, { count: nouveau }, { count: en_cours }, { count: converti }, { count: perdu }, { count: archive }] = await Promise.all([
       supabase.from('leads').select('*', { count: 'exact', head: true }),
       supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'nouveau'),
       supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'en_cours'),
       supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'converti'),
+      ck('perdu'),
+      ck('archive'),
     ]);
-    return res.json({ total, nouveau, en_cours, converti });
+    return res.json({ total, nouveau, en_cours, converti, perdu, archive });
+  }
+
+  if (action === 'assignees') {
+    const u = await authGuard(req, res); if (!u) return;
+    const LEAD_DOMS = ['juridique', 'fiscal', 'comptabilite', 'structuration', 'investissement', 'autre', 'non_classe'];
+    const forDomain = String(req.query.for_domain || '').trim().toLowerCase();
+    const { data } = await supabase
+      .from('users')
+      .select('id, full_name, role, practice_domains')
+      .eq('active', true)
+      .in('role', ['agent', 'admin', 'super_admin'])
+      .order('full_name');
+    let rows = data ?? [];
+    if (forDomain && LEAD_DOMS.includes(forDomain)) {
+      rows = rows.filter((r) => userHandlesLeadDomain(r.practice_domains, forDomain));
+    }
+    return res.json(rows);
   }
 
   if (action === 'update' && req.method === 'PUT') {
     const u = await authGuard(req, res); if (!u) return;
-    const { status, assigned_to, notes } = req.body;
-    await supabase.from('leads').update({ status, assigned_to: assigned_to || null, notes: notes || null }).eq('id', +id);
+    const patch = {};
+    const { status, assigned_to, notes, domain } = req.body ?? {};
+    if (status !== undefined) patch.status = status;
+    if (assigned_to !== undefined) patch.assigned_to = assigned_to || null;
+    if (notes !== undefined) patch.notes = notes;
+    if (domain !== undefined) patch.domain = domain;
+    if (!Object.keys(patch).length) return res.status(422).json({ error: 'Aucune donnée à mettre à jour' });
+    await supabase.from('leads').update(patch).eq('id', +id);
     return res.json({ success: true });
   }
 
@@ -629,8 +1004,8 @@ app.all('/api/client/auth.php', async (req, res) => {
       .insert({ name, email, password: bcrypt.hashSync(password, 12), company: company || null, phone: phone || null, active: true })
       .select().single();
     if (error) return res.status(409).json({ error: 'Email déjà utilisé' });
-    await supabase.from('client_messages').insert({ client_id: client.id, sender_type: 'agent', content: `Bonjour ${name} ! 👋 Bienvenue dans votre espace client NUMAFRIQ. Notre équipe est là pour vous accompagner.` });
-    sendWhatsApp(`✅ *Nouveau client NUMAFRIQ*\n\n👤 ${name}\n📧 ${email}\n🏢 ${company || 'Non précisé'}\n⏰ ${new Date().toLocaleString('fr-FR')}`);
+    await supabase.from('client_messages').insert({ client_id: client.id, sender_type: 'agent', content: `Bonjour ${name} ! 👋 Bienvenue dans votre espace client Afrilex Conseil. Notre équipe est là pour vous accompagner.` });
+    sendWhatsApp(`✅ *Nouveau client Afrilex Conseil*\n\n👤 ${name}\n📧 ${email}\n🏢 ${company || 'Non précisé'}\n⏰ ${new Date().toLocaleString('fr-FR')}`);
     const token = makeToken();
     await supabase.from('client_sessions').insert({ client_id: client.id, token, expires_at: in12h() });
     return res.json({ token, client: { id: client.id, name, email, company: company || null, phone: phone || null } });
@@ -639,7 +1014,7 @@ app.all('/api/client/auth.php', async (req, res) => {
   if (action === 'login' && req.method === 'POST') {
     const { email, password } = req.body;
     const { data: client } = await supabase.from('clients').select('*').eq('email', email).eq('active', true).single();
-    if (!client || !bcrypt.compareSync(password, client.password)) return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
+    if (!client || !safeComparePassword(password, client.password)) return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
     const token = makeToken();
     await supabase.from('client_sessions').insert({ client_id: client.id, token, expires_at: in12h() });
     return res.json({ token, client: { id: client.id, name: client.name, email: client.email, company: client.company, phone: client.phone } });
@@ -672,7 +1047,7 @@ app.all('/api/client/auth.php', async (req, res) => {
     const c = await clientGuard(req, res); if (!c) return;
     const { old_password, new_password } = req.body;
     if (!new_password || new_password.length < 6) return res.status(400).json({ error: 'Mot de passe trop court (min 6 caractères)' });
-    if (!bcrypt.compareSync(old_password ?? '', c.password)) return res.status(401).json({ error: 'Mot de passe actuel incorrect' });
+    if (!safeComparePassword(old_password ?? '', c.password)) return res.status(401).json({ error: 'Mot de passe actuel incorrect' });
     await supabase.from('clients').update({ password: bcrypt.hashSync(new_password, 12) }).eq('id', c.id);
     return res.json({ success: true });
   }
@@ -755,15 +1130,110 @@ app.post('/api/contact.php', async (req, res) => {
   const { from_name: name, from_email: email, phone, company, service, budget, timeline, message } = req.body;
   if (!name || !email || !message) return res.status(422).json({ success: false, message: 'Champs requis manquants' });
 
-  const { data, error } = await supabase.from('leads')
-    .insert({ name, email, phone: phone || null, company: company || null, service: service || null, budget: budget || null, timeline: timeline || null, message, status: 'nouveau' })
-    .select().single();
+  const domain = resolveLeadDomain(service);
+  const assigned_to = await pickAssigneeUserIdForDomain(domain);
+  const payload = {
+    name, email,
+    phone: phone || null, company: company || null, service: service || null,
+    domain,
+    budget: budget || null, timeline: timeline || null,
+    source: 'contact_web',
+    message,
+    status: 'nouveau',
+    assigned_to,
+  };
+  const { data, error } = await supabase.from('leads').insert(payload).select().single();
 
   if (error) return res.status(500).json({ success: false, message: error.message });
 
-  sendWhatsApp(`🔔 *Nouvelle demande NUMAFRIQ*\n\n👤 ${name}\n📧 ${email}\n📞 ${phone || '—'}\n🏢 ${company || '—'}\n🛠 ${service || '—'}\n💰 ${budget || '—'}\n📅 ${timeline || '—'}\n\n💬 ${message}\n\n🔗 /bureau/leads\n⏰ ${new Date().toLocaleString('fr-FR')}`);
+  sendWhatsApp(`🔔 *Nouvelle demande Afrilex Conseil*\n\n👤 ${name}\n📧 ${email}\n📞 ${phone || '—'}\n🏢 ${company || '—'}\n🛠 ${service || '—'}\n💰 ${budget || '—'}\n📅 ${timeline || '—'}\n\n💬 ${message}\n\n🔗 /bureau/leads\n⏰ ${new Date().toLocaleString('fr-FR')}`);
 
   return res.json({ success: true, message: 'Demande enregistrée', id: data?.id });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BLOG — commentaires (wp_post_id = ID REST article WordPress)
+// ══════════════════════════════════════════════════════════════════════════════
+const BLOG_COMMENT_HITS = new Map();
+function blogCommentRateOk(ip, wpPostId, max = 5, windowMs = 3_600_000) {
+  const k = `${ip}:${wpPostId}`;
+  const now = Date.now();
+  const arr = (BLOG_COMMENT_HITS.get(k) || []).filter((t) => now - t < windowMs);
+  if (arr.length >= max) return false;
+  arr.push(now);
+  BLOG_COMMENT_HITS.set(k, arr);
+  return true;
+}
+
+function sanitizeBlogCommentText(s, maxLen) {
+  if (typeof s !== 'string') return '';
+  const t = s.replace(/[\u0000-\u001f]/g, ' ').replace(/<[^>]*>/g, '').trim();
+  return t.length <= maxLen ? t : t.slice(0, maxLen);
+}
+
+function isEmailish(email) {
+  return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim().slice(0, 254));
+}
+
+app.get('/api/blog/comments', async (req, res) => {
+  const wp = parseInt(String(req.query.wp_post_id ?? ''), 10);
+  if (!Number.isFinite(wp) || wp < 1) return res.status(400).json({ error: 'wp_post_id invalide' });
+  try {
+    const { data, error } = await supabase
+      .from('afrilex_blog_comments')
+      .select('id, author_name, body, created_at')
+      .eq('wp_post_id', wp)
+      .order('created_at', { ascending: true })
+      .limit(500);
+    if (error) {
+      console.error('GET /api/blog/comments', error);
+      const missing = /(does not exist|schema cache|Could not find the table)/i.test(error.message || '');
+      return res.status(missing ? 503 : 500).json({ error: missing ? 'Table afrilex_blog_comments absente.' : error.message, comments: [] });
+    }
+    return res.json({ comments: data ?? [] });
+  } catch (e) {
+    console.error('GET /api/blog/comments', e);
+    return res.status(500).json({ error: e.message, comments: [] });
+  }
+});
+
+app.post('/api/blog/comments', async (req, res) => {
+  const ip = req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim()
+    || req.socket?.remoteAddress
+    || 'unknown';
+  const { wp_post_id, author_name, author_email, body, website } = req.body || {};
+  if (website != null && String(website).trim() !== '')
+    return res.status(204).send();
+
+  const wp = parseInt(String(wp_post_id), 10);
+  if (!Number.isFinite(wp) || wp < 1) return res.status(400).json({ error: 'Article invalide' });
+  if (!blogCommentRateOk(ip, wp))
+    return res.status(429).json({ error: 'Trop de commentaires envoyés depuis cette connexion.' });
+
+  const name = sanitizeBlogCommentText(author_name, 120);
+  const email = sanitizeBlogCommentText(author_email, 254).toLowerCase();
+  const text = sanitizeBlogCommentText(body, 4000);
+
+  if (name.length < 2) return res.status(400).json({ error: 'Indiquez un nom (min. 2 caractères).' });
+  if (!isEmailish(email)) return res.status(400).json({ error: 'Adresse email invalide.' });
+  if (text.length < 3) return res.status(400).json({ error: 'Le message est trop court.' });
+
+  const { data, error } = await supabase
+    .from('afrilex_blog_comments')
+    .insert({ wp_post_id: wp, author_name: name, author_email: email, body: text })
+    .select('id, author_name, body, created_at')
+    .single();
+
+  if (error) {
+    console.error('POST /api/blog/comments', error);
+    const missing = /(does not exist|schema cache|Could not find the table)/i.test(error.message || '');
+    return res.status(503).json({
+      error: missing
+        ? 'Créez la table afrilex_blog_comments dans Supabase (voir scripts/sql/afrilex_blog_comments.sql).'
+        : "Impossible d'enregistrer le commentaire.",
+    });
+  }
+  return res.status(201).json({ ok: true, comment: data });
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -775,13 +1245,19 @@ app.post('/api/chat.php', async (req, res) => {
   const { messages } = req.body;
   if (!messages) return res.status(400).json({ error: 'messages requis' });
 
-  const system = `Tu es NUMA, l'assistant IA officiel de NUMAFRIQ.
-Tu es professionnel, chaleureux et orienté résultat.
-Réponds TOUJOURS en français sauf si le client parle anglais.
-Services : Sites vitrine (450k FCFA+), E-commerce (850k+), SEO, Branding, Apps web.
-Contact : info@numafriq.com | WhatsApp +22656191930 | Réponse < 24h.
-Si l'utilisateur veut un devis, recueille nom + téléphone puis ajoute en fin de réponse :
-[LEAD:nom=NOM|tel=TEL|sujet=SUJET]`;
+  const system = `Tu es AFRI, l'assistant IA officiel d'Afrilex Conseil (cabinet d'assistance juridique, fiscale et comptable, Ouagadougou, Burkina Faso).
+Zones d'intervention du cabinet : Afrique de l'Ouest, autres pays OHADA, diaspora.
+Tu es professionnel, chaleureux, concis et orienté solutions.
+Tu réponds TOUJOURS en français sauf si le client parle anglais.
+Tu n'inventes jamais de conseils juridiques précis : tu orientes vers le cabinet pour les dossiers concrets.
+
+Expertises : droit des affaires & contrats ; fiscalité & optimisation (cadre légal) ; comptabilité & conformité ; structuration & financement ; conformité & gouvernance (dont OHADA) ; accompagnement investisseurs.
+Contact : info@afrilexconseil.com | WhatsApp / tél. +226 52 20 91 91 | Réponse sous 24h ouvrées.
+Blog : https://afrilexconseil.com/blog/
+
+Règles : 3-4 lignes max sauf détails demandés ; **gras** pour les infos clés ; proposer une prochaine étape (contact, rendez-vous).
+Si la personne veut être rappelée ou mandater le cabinet, demande NOM et TÉLÉPHONE. Quand tu as les deux, ajoute à la fin :
+[LEAD:nom=NOM COMPLET|tel=NUMÉRO|sujet=SUJET COURT]`;
 
   try {
     const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -794,7 +1270,7 @@ Si l'utilisateur veut un devis, recueille nom + téléphone puis ajoute en fin d
     let lead = false;
     const lm = text.match(/\[LEAD:nom=([^|]+)\|tel=([^|]+)\|sujet=([^\]]+)\]/i);
     if (lm) {
-      sendWhatsApp(`🤖 *Lead chat NUMAFRIQ*\n👤 ${lm[1].trim()}\n📞 ${lm[2].trim()}\n🎯 ${lm[3].trim()}\n⏰ ${new Date().toLocaleString('fr-FR')}`);
+      sendWhatsApp(`🤖 *Lead chat Afrilex Conseil*\n👤 ${lm[1].trim()}\n📞 ${lm[2].trim()}\n🎯 ${lm[3].trim()}\n⏰ ${new Date().toLocaleString('fr-FR')}`);
       text = text.replace(/\[LEAD:[^\]]+\]/gi, '').trim();
       lead = true;
     }
@@ -805,14 +1281,105 @@ Si l'utilisateur veut un devis, recueille nom + téléphone puis ajoute en fin d
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// DÉMARRAGE
+// ASSISTANT MÉTIER AGENTS — Groq + base locale Markdown (api/bureau/kb)
+// ══════════════════════════════════════════════════════════════════════════════
+app.post('/api/bureau/assistant.php', async (req, res) => {
+  const u = await authGuard(req, res); if (!u) return;
+  if (!GROQ_KEY) {
+    return res.status(503).json({
+      error: 'Clé Groq absente — définissez GROQ_API_KEY dans .env.local (même variable que chat public).',
+    });
+  }
+  const modeRaw = req.body.mode || 'assist';
+  const mode = normalizeAssistantMode(modeRaw);
+  const dossier = req.body.dossier && typeof req.body.dossier === 'object' ? req.body.dossier : {};
+  const messages = sanitizeAssistantMessages(req.body.messages);
+  if (messages.length === 0) return res.status(400).json({ error: 'messages[] requis (user|assistant avec contenu non vide)' });
+
+  let system = `Tu es l'assistant métier exclusif des agents connectés d'Afrilex Conseil (cabinet juridique et droit des affaires ; zones d'intervention : Afrique de l'Ouest, autres pays OHADA, diaspora).
+Réponds en français. Reste prudent : pas de garantie de résultat ; ne cite des numéros d'articles officiels que si le contexte ou la base ci-dessous les indique clairement, sinon propose une orientation et renvoie vers les sources officielles.
+CONSIGNÉ : rappeler régulièrement que toute pièce ou stratégie doit être validée par l'associé référent.
+
+Base de synthèses internes (non officielles, compléter par vos recherches) :
+"""
+${loadKbBureauMarkdown()}
+"""`;
+
+  if (mode === 'memo_defense') {
+    system += `\nMODE : BROUILLON de mémoire de défense / conclusions / écritures adverses. Produis du Markdown structuré (titres, listes) avec [À compléter] pour les faits ou pièces manquants. Termine par un bloc « AVERTISSEMENT CABINET » (brouillon IA, vérification obligatoire avant dépôt).`;
+    const keys = [
+      'reference', 'juridiction', 'pieces', 'objectif', 'contraintes_delais',
+      'client', 'demandeur', 'resume_faits', 'theses_principales', 'points_de_droit', 'conclusions_souhaitees',
+    ];
+    const parts = [];
+    for (const k of keys) {
+      const v = dossier[k];
+      if (v != null && String(v).trim() !== '') parts.push(`${k}=${String(v).trim()}`);
+    }
+    const memoLitige = dossier.memo_litige;
+    if (memoLitige != null && String(memoLitige).trim() !== '' && !dossier.resume_faits) {
+      parts.push(`synopsis_litige=${String(memoLitige).trim()}`);
+    }
+    if (parts.length) system += '\nInformations dossier renseignées par l\'agent : ' + parts.join(' | ');
+  }
+
+  const temperature = mode === 'memo_defense' ? 0.25 : 0.45;
+  const max_tokens  = mode === 'memo_defense' ? 8192 : 2600;
+
+  try {
+    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method:  'POST',
+      headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'system', content: system }, ...messages],
+        temperature,
+        max_tokens,
+      }),
+    });
+    const d = await r.json();
+    const msg = d.choices?.[0]?.message?.content ?? '';
+    if (!msg || r.status !== 200) return res.status(503).json({ error: d.error?.message || 'Assistant Groq indisponible.' });
+    return res.json({
+      success: true,
+      message: msg,
+      reply: msg,
+      model: 'llama-3.3-70b-versatile',
+      mode,
+      mode_requested: modeRaw,
+      kb_attached: true,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DÉMARRAGE — migrations avant écoute (évite connexion avant création des comptes)
 // ══════════════════════════════════════════════════════════════════════════════
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, async () => {
-  console.log(`\n🚀 NUMAFRIQ API (Supabase) — http://localhost:${PORT}`);
-  console.log(`   🗄️  ${SUPABASE_URL}`);
-  console.log(`   📱 WhatsApp : +${WA_PHONE}`);
-  if (!META_ACCESS_TOKEN) console.log('   ⚠️  WhatsApp → console (dev mode)');
-  console.log('');
-  await seedIfEmpty();
-});
+
+seedCabinetDemoIfTotallyEmpty()
+  .then(() => ensureBootstrapAdminExists())
+  .then(() => ensureAfrilexAgentBootstrapUser())
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`\n🚀 Afrilex Conseil API (Supabase) — http://localhost:${PORT}`);
+      console.log(`   GET http://localhost:${PORT}/api/bureau/health — test tables users/sessions`);
+      console.log(`   🗄️  ${SUPABASE_URL}`);
+      console.log(`   📱 WhatsApp : +${WA_PHONE}`);
+      if (!META_ACCESS_TOKEN) console.log('   ⚠️  WhatsApp → console (dev mode)');
+      console.log('');
+      if (!process.env.NODE_ENV || process.env.NODE_ENV === 'development') {
+        console.log(
+          '💡 Bureau : « sagnon » / « sagnon » ou « afrilex_agent » / « AfrilexBureau2026! » — changez en production.\n' +
+            '   Réinit. hash secours : AFRILEX_SYNC_AGENT_LOGIN=1 ; « sagnon » : AFRILEX_LOCAL_SYNC_SAGNON=1\n',
+        );
+      }
+    });
+  })
+  .catch((err) => {
+    console.error('\n❌ Impossible d’initialiser la base / Supabase avant démarrage :', err?.message || err);
+    console.error('   Vérifiez SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY et que sql/supabase-setup.sql a été exécuté.\n');
+    process.exit(1);
+  });
