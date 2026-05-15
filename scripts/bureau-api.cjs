@@ -23,6 +23,7 @@ if (fs.existsSync(envFile)) {
 
 // ── Dépendances ───────────────────────────────────────────────────────────────
 const express  = require('express');
+const multer   = require('multer');
 const cors     = require('cors');
 const bcrypt   = require('bcryptjs');
 const crypto   = require('crypto');
@@ -130,6 +131,11 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' })); // 10mb pour autoriser les images base64 (couvertures blog)
+
+const uploadCareersCv = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5242880 },
+});
 
 // No-cache sur toutes les réponses API
 app.use((_req, res, next) => {
@@ -1061,6 +1067,106 @@ app.all('/api/bureau/leads.php', async (req, res) => {
   }
 
   res.status(404).json({ error: 'Action non trouvée' });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ASSISTANT RÉDACTION (Groq — clé serveur uniquement)
+// ══════════════════════════════════════════════════════════════════════════════
+function buildAssistantSystem(mode, kb, dossierBlock) {
+  const base =
+    '# Rappels de prudence\n' +
+    "- L'outil produit des **brouillons** ou des pistes rédactionnelles. Il ne substitue pas l'examen humain ni un avis professionnel définitif.\n" +
+    '- Ne cite pas comme acquises sans preuve les références légales ou jurisprudentielles : indique‑les après **les avoir vérifiées** sur les sources officielles ou avec l’avis interne qui s’appuie sur dossier réel.\n' +
+    "- Base synthétique (non exhaustive) fournie ci-dessous ; **ne présume pas** d'autres règles que celles dont tu disposes :\n\n" +
+    (kb.trim() ? kb.trim() + '\n\n---\n\n' : '');
+
+  if (mode === 'memo_litige') {
+    return (
+      `${base}` +
+      "Tu aides l'équipe à produire un **brouillon** de mémo argumenté ou de note de synthèse (contentieux ou stratégique).\n" +
+      "- Réponds **en français** sauf si l'utilisateur demande explicitement une autre langue.\n" +
+      '- Structure claire : problématiques, exposition des faits, arguments, contre-arguments envisageables, demandes concrètes, pièces / preuves à relire.\n' +
+      '- Marque comme **[à vérifier]** toute référence à un article, texte officiel OU jurisprudence si tu ne l’as pas sous les yeux.\n' +
+      '- Si les faits sont insuffisants, pose au plus **trois questions ciblées** avant de développer trop longtemps.\n' +
+      (dossierBlock
+        ? `\n## Contexte fourni par l'utilisateur\n${dossierBlock}\n`
+        : '')
+    );
+  }
+
+  return (
+    `${base}` +
+    "Tu es un assistant rédactionnel pour l'espace bureau **NUMAFRIQ**.\n" +
+    '- Aide les agents à préparer dossiers internes : mails, présentations, plans d\'action projet, synthèses, check-lists livrables.\n' +
+    '- Réponses **concises puis détaillables** ; ton professionnel bienveillant.\n' +
+    '- Réponds **en français** sauf indication contraire.\n' +
+    '- Si hors champ digital / gestion projet, reste prudent et propose des formulations neutres.'
+  );
+}
+
+app.post('/api/bureau/assistant.php', async (req, res) => {
+  const u = await authGuard(req, res);
+  if (!u) return;
+  const groqKey = process.env.GROQ_API_KEY;
+  if (!groqKey || !groqKey.trim()) {
+    return res.status(503).json({
+      error: 'Assistant désactivé. Définir la variable serveur GROQ_API_KEY (jamais côté client).',
+    });
+  }
+
+  const {
+    mode: rawMode = 'assist',
+    messages = [],
+    dossier_summary: dossierSummary = '',
+  } = req.body ?? {};
+  const mode = rawMode === 'memo_litige' ? 'memo_litige' : 'assist';
+  const raw = Array.isArray(messages) ? messages : [];
+  const sanitized = raw
+    .filter((m) => m && typeof m.role === 'string' && typeof m.content === 'string')
+    .map((m) => ({
+      role: ['assistant', 'user'].includes(m.role) ? m.role : 'user',
+      content: String(m.content).slice(0, 14_000),
+    }))
+    .slice(-22);
+
+  if (!sanitized.length || sanitized[sanitized.length - 1].role !== 'user') {
+    return res.status(422).json({ error: 'Fournissez au moins un message utilisateur à la fin de la conversation.' });
+  }
+
+  const dossierBlock = dossierSummary ? String(dossierSummary).slice(0, 20_000) : '';
+  const system = buildAssistantSystem(mode, loadKbBureauMarkdown(), dossierBlock);
+
+  try {
+    const upstream = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${groqKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'system', content: system }, ...sanitized],
+        temperature: mode === 'memo_litige' ? 0.35 : 0.45,
+        max_tokens: 8192,
+      }),
+    });
+
+    const data = await upstream.json().catch(() => ({}));
+    if (!upstream.ok) {
+      const hint = data?.error?.message || upstream.statusText;
+      console.error('[assistant]', upstream.status, hint);
+      return res.status(502).json({ error: 'Fournisseur LLM indisponible.', detail: hint });
+    }
+
+    const reply = data?.choices?.[0]?.message?.content;
+    if (!reply || typeof reply !== 'string') {
+      return res.status(502).json({ error: 'Réponse invalide du modèle.' });
+    }
+    return res.json({ reply: reply.trim(), mode });
+  } catch (e) {
+    console.error('[assistant]', e.message);
+    return res.status(502).json({ error: 'Erreur lors de l’appel au modèle.' });
+  }
 });
 
 // ══════════════════════════════════════════════════════════════════════════════

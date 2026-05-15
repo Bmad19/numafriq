@@ -1009,6 +1009,32 @@ const fr = {
       ctaSecondary: "Blog",
     },
   ],
+  careersSlides: [
+    {
+      tag: "Talent & culture produit",
+      eyebrow: "Carrières NUMAFRIQ",
+      title: "Rejoignez une équipe\nqui livre avec\nméthode et exigence.",
+      sub: "Projets web, SEO et acquisition pour des marques ambitieuses. Process RH transparent, feedback régulier et environnement où la qualité du livrable prime.",
+      cta: "Voir le formulaire",
+      ctaSecondary: "Nous contacter",
+    },
+    {
+      tag: "Parcours clair",
+      eyebrow: "Recrutement structuré",
+      title: "Des étapes lisibles,\ndu dépôt de CV à\nla décision finale.",
+      sub: "Candidature en ligne, présélection, entretiens métier puis proposition ou retour personnalisé — conformément aux bonnes pratiques de gestion des talents.",
+      cta: "Postuler maintenant",
+      ctaSecondary: "À propos",
+    },
+    {
+      tag: "Afrique & diaspora",
+      eyebrow: "Remote & synchrone",
+      title: "Collaborez depuis\nOuagadougou,\nParis ou ailleurs.",
+      sub: "Équipe répartie sur plusieurs fuseaux : nous combinons standards internationaux et proximité avec les réalités des marchés francophones.",
+      cta: "Envoyer mon dossier",
+      ctaSecondary: "Blog",
+    },
+  ],
 
   // ── Legal ────────────────────────────────────────────────────────────────
   legal: {

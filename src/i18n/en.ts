@@ -855,6 +855,146 @@ const en: Translations = {
     },
   },
 
+  careers: {
+    seoDesc:
+      "Join NUMAFRIQ: transparent hiring path, product-minded culture, apply online with your CV.",
+    introTag: "Responsible employer",
+    introTitle: "Build your career with a demanding, supportive digital team",
+    introSub:
+      "NUMAFRIQ ships web platforms and growth programmes for brands across Africa and internationally. We look for curious, rigorous, impact-driven profiles — engineering, design, SEO, project leadership or legal/editorial content aligned with our Afrilex ecosystem.",
+    pillars: [
+      {
+        title: "Clarity & feedback",
+        desc: "Readable recruitment milestones, explicit role criteria and personalised feedback when your profile is shortlisted — or when we cannot move forward.",
+      },
+      {
+        title: "Skill growth",
+        desc: "Tech/design watch, structured reviews with seniors and shared rituals so everyone levels up together.",
+      },
+      {
+        title: "Thoughtful hybrid work",
+        desc: "Remote-friendly collaboration with structured syncs and documented deliverables — suited to creative, distributed teams.",
+      },
+    ],
+    openRolesTag: "Open roles",
+    openRolesTitle: "Roles we are actively hiring for",
+    openRolesLead:
+      "Published from the Afrilex / NUMAFRIQ back office (“Offres emploi”). Apply from a card or pick a generic role in the form below.",
+    openRolesEmpty:
+      "No published openings right now. You can still send a spontaneous application via the form.",
+    openRolesLoadError:
+      "Could not load openings. The form still works — refresh the page or try again later.",
+    expandRole: "Read full description",
+    collapseRole: "Collapse",
+    applyToRole: "Apply for this role",
+    journeyTag: "HR journey",
+    journeyTitle: "What happens after you apply?",
+    journeySub:
+      "Standard process aligned with modern HR practice: no discrimination based on origin, gender, age or family status; decisions grounded in skills, experience and cultural fit with our clarity and reliability values.",
+    journeySteps: [
+      {
+        title: "Online application",
+        desc: "Complete the form below, attach an up-to-date CV (PDF or Word) and a concise motivation note.",
+      },
+      {
+        title: "HR shortlisting",
+        desc: "We assess fit against open roles or our spontaneous pipeline. Incomplete applications may be set aside.",
+      },
+      {
+        title: "Interviews",
+        desc: "Conversations with operators: light situational questions, deep dives into tangible outcomes and collaboration styles.",
+      },
+      {
+        title: "Decision & onboarding",
+        desc: "Offer or constructive feedback within ~10–15 business days under normal load. If hired: scope clarification, start date and paperwork.",
+      },
+    ],
+    charterTag: "Fairness & privacy",
+    charterTitle: "Equal treatment and confidentiality",
+    charterItems: [
+      "Your data is used solely for recruitment — never sold to third parties.",
+      "CVs are stored securely with access limited to authorised HR and hiring managers.",
+      "Request updates or deletion anytime via info@numafriq.com.",
+      "Spontaneous applications welcome — specify your focus area to speed internal routing.",
+    ],
+    formTag: "Application form",
+    formTitle: "Submit a structured application",
+    formSub:
+      "Fields marked with an asterisk are required. Prepare an updated CV (max. 5 MB) and a motivation note explaining your contribution to NUMAFRIQ.",
+    form: {
+      firstName: "First name *",
+      lastName: "Last name *",
+      email: "Professional email *",
+      phone: "Phone / WhatsApp",
+      cityCountry: "City & country",
+      linkedin: "LinkedIn profile URL",
+      position: "Role family you target *",
+      contract: "Desired collaboration type *",
+      availability: "Availability (notice period, start date…)",
+      experience: "Relevant professional experience",
+      education: "Highest completed education level",
+      languages: "Languages (e.g. Native French, English C1)",
+      motivation: "Motivation / professional project *",
+      motivationPlaceholder:
+        "Outline your path, 2–3 achievements you are proud of, what attracts you to NUMAFRIQ / Afrilex Conseil and your expectations for the next 12 months (minimum ~80 characters).",
+      cv: "Curriculum vitæ *",
+      cvHint: "PDF, DOC or DOCX — up to 5 MB.",
+      removeFile: "Remove file",
+      consent:
+        "I agree that NUMAFRIQ processes my personal data for recruitment purposes, per the site privacy policy. *",
+      submit: "Submit application",
+      sending: "Sending securely…",
+      successTitle: "Application received",
+      successSub:
+        "Check your inbox: a confirmation email was just sent. Our team will review your file subject to open needs.",
+      resetForm: "Submit another application",
+      errorTitle: "Submission failed",
+      retry: "Try again",
+      optional: "Optional",
+      availabilityPlaceholder: "e.g. Immediately / 1-month notice / from 01 Sep 2026",
+      privacyNavigate: "Read the privacy policy",
+      errors: {
+        motivationMin: "Motivation text must be at least 80 characters.",
+        cvRequired: "Please attach your CV.",
+        cvSize: "File exceeds 5 MB.",
+        cvType: "Accepted formats: PDF, DOC, DOCX.",
+        consent: "You must accept data processing.",
+      },
+    },
+    positions: {
+      developer_fullstack: "Engineering — Full-stack / JS",
+      developer_frontend: "Front-end / UI engineering",
+      developer_backend: "Back-end / APIs & infra",
+      designer_uiux: "UI/UX & design systems",
+      seo_content: "SEO, content & editorial performance",
+      project_manager: "Digital project lead / product ops",
+      marketing_growth: "Digital marketing / growth",
+      legal_editorial: "Legal & editorial content (Afrilex ecosystem)",
+      internship: "Internship or work-study",
+      spontaneous: "Spontaneous application — other digital expertise",
+    },
+    contracts: {
+      cdi: "Permanent contract",
+      cdd: "Fixed-term / scoped assignment",
+      freelance: "Freelance / consulting",
+      internship: "Internship / apprenticeship",
+      discuss: "To be discussed",
+    },
+    experience: {
+      "0-1": "0 to 1 year",
+      "2-3": "2 to 3 years",
+      "4-6": "4 to 6 years",
+      "7plus": "7+ years",
+    },
+    education: {
+      bac: "High school diploma / equivalent",
+      bac2_3: "Associate / Bachelor years",
+      bac4_5: "Bachelor / Master 1 level",
+      bac5_plus: "Master 2 / Engineering / PhD",
+      professional_track: "Self-taught with demonstrable professional track record",
+    },
+  },
+
   testimonials: {
     eyebrow: "Commitments",
     title:   "What guides our work",
@@ -992,6 +1132,32 @@ const en: Translations = {
       title: "Talent & employers\npowering local\nand regional\nprojects.",
       sub: "West Africa and OHADA-wide sourcing with operational support for professional services firms and corporate leadership teams.",
       cta: "Send my CV",
+      ctaSecondary: "Blog",
+    },
+  ],
+  careersSlides: [
+    {
+      tag: "Talent & craft",
+      eyebrow: "NUMAFRIQ careers",
+      title: "Join a team that\nships with rigour\nand clarity.",
+      sub: "Web builds, SEO and acquisition for ambitious brands. Transparent HR rituals, steady feedback and environments where delivery quality matters.",
+      cta: "See the form",
+      ctaSecondary: "Contact us",
+    },
+    {
+      tag: "Clear process",
+      eyebrow: "Structured hiring",
+      title: "Readable steps\nfrom CV upload\nto final decision.",
+      sub: "Online application, shortlisting, operational interviews then offer or personalised feedback — aligned with modern talent management standards.",
+      cta: "Apply now",
+      ctaSecondary: "About us",
+    },
+    {
+      tag: "Africa & diaspora",
+      eyebrow: "Remote & sync",
+      title: "Collaborate from\nOuagadougou,\nParis or beyond.",
+      sub: "Distributed crew across time zones combining international standards with proximity to Francophone markets.",
+      cta: "Send my dossier",
       ctaSecondary: "Blog",
     },
   ],

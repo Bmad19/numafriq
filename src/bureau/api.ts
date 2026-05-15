@@ -206,6 +206,152 @@ export type Feedback = {
   status: 'nouveau'|'traite'|'archive'; created_at: string;
 };
 
+export type BureauBlogArticle = {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  body_html: string;
+  featured_image_url: string | null;
+  categories: string[];
+  published: boolean;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BureauBlogComment = {
+  id: string;
+  article_id: string;
+  author_name: string;
+  author_email: string;
+  body: string;
+  created_at: string;
+  article_title?: string;
+};
+
+export type BureauCareerOffer = {
+  id: string;
+  position_key: string;
+  title_fr: string;
+  title_en: string;
+  meta_fr: string;
+  meta_en: string;
+  summary_fr: string;
+  summary_en: string;
+  detail_fr: string;
+  detail_en: string;
+  sort_order: number;
+  published: boolean;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export const careersOffersApi = {
+  list: () =>
+    request<{ offers: BureauCareerOffer[] }>("careers-offers.php", "GET", undefined, {
+      action: "list",
+    }).then((r) => r.offers ?? []),
+
+  get: (id: string) =>
+    request<{ offer: BureauCareerOffer }>("careers-offers.php", "GET", undefined, {
+      action: "get",
+      id,
+    }).then((r) => r.offer),
+
+  create: (data: {
+    position_key: string;
+    title_fr: string;
+    title_en: string;
+    meta_fr?: string;
+    meta_en?: string;
+    summary_fr?: string;
+    summary_en?: string;
+    detail_fr?: string;
+    detail_en?: string;
+    sort_order?: number;
+    published?: boolean;
+    published_at?: string | null;
+  }) =>
+    request<{ ok: boolean; offer: BureauCareerOffer }>(
+      "careers-offers.php",
+      "POST",
+      data,
+      { action: "create" }
+    ),
+
+  update: (id: string, data: Partial<BureauCareerOffer>) =>
+    request<{ ok: boolean; offer: BureauCareerOffer }>(
+      "careers-offers.php",
+      "PUT",
+      data,
+      { action: "update", id }
+    ),
+
+  delete: (id: string) =>
+    request<{ ok: boolean }>("careers-offers.php", "DELETE", undefined, {
+      action: "delete",
+      id,
+    }),
+};
+
+export const blogArticlesApi = {
+  list: () =>
+    request<{ articles: BureauBlogArticle[] }>("blog.php", "GET", undefined, {
+      action: "list",
+    }).then((r) => r.articles ?? []),
+
+  get: (id: string) =>
+    request<{ article: BureauBlogArticle }>("blog.php", "GET", undefined, {
+      action: "get",
+      id,
+    }).then((r) => r.article),
+
+  create: (data: {
+    slug?: string;
+    title: string;
+    excerpt: string;
+    body_html: string;
+    featured_image_url?: string | null;
+    categories?: string[];
+    published?: boolean;
+    published_at?: string | null;
+  }) =>
+    request<{ ok: boolean; article: BureauBlogArticle }>(
+      "blog.php",
+      "POST",
+      data,
+      { action: "create" }
+    ),
+
+  update: (id: string, data: Partial<BureauBlogArticle>) =>
+    request<{ ok: boolean; article: BureauBlogArticle }>(
+      "blog.php",
+      "PUT",
+      data,
+      { action: "update", id }
+    ),
+
+  delete: (id: string) =>
+    request<{ ok: boolean }>("blog.php", "DELETE", undefined, {
+      action: "delete",
+      id,
+    }),
+
+  commentsList: (articleId?: string) =>
+    request<{ comments: BureauBlogComment[] }>("blog.php", "GET", undefined, {
+      action: "comments_list",
+      ...(articleId ? { article_id: articleId } : {}),
+    }).then((r) => r.comments ?? []),
+
+  commentDelete: (commentId: string) =>
+    request<{ ok: boolean }>("blog.php", "DELETE", undefined, {
+      action: "comment_delete",
+      id: commentId,
+    }),
+};
+
 // ── Leads (demandes de projet depuis le formulaire contact) ───────────────────
 export type LeadDomain =
   | "juridique"
