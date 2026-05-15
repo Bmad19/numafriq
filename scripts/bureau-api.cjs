@@ -1333,6 +1333,213 @@ app.post('/api/contact.php', async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
+// FORMULAIRE CARRIÈRES → enregistré en candidature (job_applications)
+// Public POST multipart/form-data (champs texte + fichier `cv`)
+// ══════════════════════════════════════════════════════════════════════════════
+const APPLICATION_MODES = ['offer', 'profile_pool', 'spontaneous'];
+const ALLOWED_CV_MIMES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/octet-stream', // certains navigateurs envoient ça pour .docx
+]);
+
+app.post('/api/careers.php', uploadCareersCv.single('cv'), async (req, res) => {
+  try {
+    const b = req.body || {};
+    // Honeypot
+    if (typeof b.website === 'string' && b.website.trim() !== '') return res.json({ success: true });
+
+    const first_name  = String(b.first_name ?? '').trim().slice(0, 120);
+    const last_name   = String(b.last_name  ?? '').trim().slice(0, 120);
+    const email       = String(b.email      ?? '').trim().toLowerCase().slice(0, 254);
+    const motivation  = String(b.motivation ?? '').trim().slice(0, 8000);
+    const consent     = b.consent_data_processing === '1' || b.consent_data_processing === true;
+    const locale      = (String(b.locale ?? 'fr').toLowerCase() === 'en') ? 'en' : 'fr';
+
+    if (!first_name || !last_name || !email || !motivation) {
+      return res.status(422).json({ success: false, message: locale === 'en' ? 'Missing required fields.' : 'Champs obligatoires manquants.' });
+    }
+    if (!isEmailish(email)) {
+      return res.status(422).json({ success: false, message: locale === 'en' ? 'Invalid email.' : 'Email invalide.' });
+    }
+    if (motivation.length < 80) {
+      return res.status(422).json({ success: false, message: locale === 'en' ? 'Motivation must be at least 80 characters.' : 'Le message de motivation doit contenir au moins 80 caractères.' });
+    }
+    if (!consent) {
+      return res.status(422).json({ success: false, message: locale === 'en' ? 'You must accept the data processing.' : 'Vous devez accepter le traitement de vos données.' });
+    }
+    if (!req.file || !req.file.buffer) {
+      return res.status(422).json({ success: false, message: locale === 'en' ? 'CV file is required.' : 'Le CV est obligatoire.' });
+    }
+    const cvBuf = req.file.buffer;
+    if (cvBuf.length > 5 * 1024 * 1024) {
+      return res.status(413).json({ success: false, message: locale === 'en' ? 'CV is too large (max 5 MB).' : 'CV trop volumineux (max 5 Mo).' });
+    }
+    const mime = req.file.mimetype || 'application/octet-stream';
+    const cvName = (req.file.originalname || 'cv').slice(0, 240);
+    if (!ALLOWED_CV_MIMES.has(mime) && !/\.(pdf|docx?|odt)$/i.test(cvName)) {
+      return res.status(415).json({ success: false, message: locale === 'en' ? 'Unsupported CV format (PDF / DOC / DOCX).' : 'Format de CV non supporté (PDF / DOC / DOCX).' });
+    }
+
+    let application_mode = String(b.application_mode ?? 'offer').toLowerCase();
+    if (!APPLICATION_MODES.includes(application_mode)) application_mode = 'offer';
+
+    let position_applied = String(b.position_applied ?? '').trim().slice(0, 80);
+    if (application_mode === 'spontaneous') position_applied = 'spontaneous';
+
+    const payload = {
+      first_name, last_name, email,
+      phone:            b.phone ? String(b.phone).trim().slice(0, 100) : null,
+      city_country:     b.city_country ? String(b.city_country).trim().slice(0, 200) : null,
+      linkedin_url:     b.linkedin_url ? String(b.linkedin_url).trim().slice(0, 500) : null,
+      position_applied: position_applied || 'spontaneous',
+      contract_type:    String(b.contract_type ?? 'discuss').trim().slice(0, 40),
+      availability:     b.availability ? String(b.availability).trim().slice(0, 160) : null,
+      experience_years: b.experience_years ? String(b.experience_years).trim().slice(0, 24) : null,
+      education_level:  b.education_level ? String(b.education_level).trim().slice(0, 48) : null,
+      languages:        b.languages ? String(b.languages).trim().slice(0, 400) : null,
+      motivation,
+      application_mode,
+      job_offer_ref:    application_mode === 'offer' && b.job_offer_ref ? String(b.job_offer_ref).trim().slice(0, 120) : null,
+      sought_role_title: application_mode === 'profile_pool' && b.sought_role_title ? String(b.sought_role_title).trim().slice(0, 255) : null,
+      cv_original_name: cvName,
+      cv_mime:          mime,
+      cv_data:          '\\x' + cvBuf.toString('hex'),
+      cv_size_bytes:    cvBuf.length,
+      locale,
+      consent_data_processing: true,
+      status: 'nouveau',
+    };
+
+    const { data, error } = await supabase.from('job_applications').insert(payload).select('id').single();
+    if (error) {
+      console.error('careers insert', error);
+      const missing = /(does not exist|schema cache|Could not find the table)/i.test(error.message || '');
+      return res.status(missing ? 503 : 500).json({
+        success: false,
+        message: missing
+          ? 'Table job_applications absente — exécutez sql/supabase_inbox_addon.sql.'
+          : (locale === 'en' ? 'Server error while saving application.' : 'Erreur serveur lors de l\'enregistrement.'),
+      });
+    }
+
+    sendWhatsApp(`📨 *Nouvelle candidature Afrilex Conseil*\n\n👤 ${first_name} ${last_name}\n📧 ${email}\n📞 ${payload.phone || '—'}\n🛠 Poste : ${position_applied}\n📂 Mode : ${application_mode}${payload.job_offer_ref ? `\n🔖 Réf. offre : ${payload.job_offer_ref}` : ''}\n📎 CV : ${cvName} (${(cvBuf.length / 1024).toFixed(0)} Ko)\n\n💬 ${motivation.slice(0, 240)}${motivation.length > 240 ? '…' : ''}\n\n🔗 /bureau/inbox\n⏰ ${new Date().toLocaleString('fr-FR')}`);
+
+    return res.json({
+      success: true,
+      message: locale === 'en' ? 'Application received. We will contact you shortly.' : 'Candidature reçue. Nous reviendrons vers vous rapidement.',
+      id: data?.id,
+    });
+  } catch (e) {
+    console.error('POST /api/careers.php', e);
+    return res.status(500).json({ success: false, message: String(e?.message || e) });
+  }
+});
+
+// Petit handler d'erreur multer (taille / type) → réponse JSON propre
+app.use((err, _req, res, next) => {
+  if (err && err.name === 'MulterError') {
+    return res.status(413).json({ success: false, message: `Upload rejeté : ${err.message}` });
+  }
+  return next(err);
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CANDIDATURES (admin) — CRUD + téléchargement du CV
+// ══════════════════════════════════════════════════════════════════════════════
+const APPLICATION_PUBLIC_COLUMNS =
+  'id, first_name, last_name, email, phone, city_country, linkedin_url, ' +
+  'position_applied, contract_type, availability, experience_years, education_level, languages, ' +
+  'motivation, application_mode, job_offer_ref, sought_role_title, ' +
+  'cv_original_name, cv_mime, cv_size_bytes, locale, consent_data_processing, ' +
+  'status, notes, assigned_to, created_at, updated_at';
+
+app.all('/api/bureau/applications.php', async (req, res) => {
+  try {
+    if (!(await authGuard(req, res))) return;
+    if (!permGuard(req, res, 'leads')) return; // partage la perm "leads" (boîte de réception unifiée)
+    const { action, id } = req.query;
+
+    if (action === 'list' && req.method === 'GET') {
+      const { data, error } = await supabase
+        .from('job_applications')
+        .select(`${APPLICATION_PUBLIC_COLUMNS}, agent:users!assigned_to(full_name)`)
+        .order('created_at', { ascending: false });
+      if (error) {
+        const missing = /(does not exist|schema cache|Could not find the table)/i.test(error.message || '');
+        return res.status(missing ? 503 : 500).json({
+          error: missing ? 'Table job_applications absente — exécutez sql/supabase_inbox_addon.sql.' : error.message,
+        });
+      }
+      return res.json((data ?? []).map((r) => ({ ...r, agent: undefined, agent_name: r.agent?.full_name ?? null })));
+    }
+
+    if (action === 'stats' && req.method === 'GET') {
+      const counts = {};
+      const all = ['nouveau', 'examine', 'entretien', 'refuse', 'embauche', 'archive'];
+      const [{ count: total }] = await Promise.all([
+        supabase.from('job_applications').select('*', { count: 'exact', head: true }),
+      ]);
+      for (const st of all) {
+        const { count } = await supabase.from('job_applications').select('*', { count: 'exact', head: true }).eq('status', st);
+        counts[st] = count ?? 0;
+      }
+      return res.json({ total, ...counts });
+    }
+
+    if (action === 'update' && req.method === 'PUT') {
+      const u = await authGuard(req, res); if (!u) return;
+      const b = req.body || {};
+      const update = {};
+      if (typeof b.status === 'string') update.status = b.status;
+      if (b.notes !== undefined) update.notes = b.notes ? String(b.notes).slice(0, 4000) : null;
+      if (b.assigned_to !== undefined) update.assigned_to = b.assigned_to ? +b.assigned_to : null;
+      const { error } = await supabase.from('job_applications').update(update).eq('id', +id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    if (action === 'delete' && req.method === 'DELETE') {
+      const u = await authGuard(req, res, 'admin'); if (!u) return;
+      const { error } = await supabase.from('job_applications').delete().eq('id', +id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    if (action === 'cv' && req.method === 'GET') {
+      const appId = +id;
+      const { data, error } = await supabase
+        .from('job_applications')
+        .select('cv_original_name, cv_mime, cv_data')
+        .eq('id', appId)
+        .maybeSingle();
+      if (error) return res.status(500).send(error.message);
+      if (!data || !data.cv_data) return res.status(404).send('CV introuvable');
+      let buf;
+      if (typeof data.cv_data === 'string' && data.cv_data.startsWith('\\x')) buf = Buffer.from(data.cv_data.slice(2), 'hex');
+      else if (typeof data.cv_data === 'string') buf = Buffer.from(data.cv_data, 'base64');
+      else if (Buffer.isBuffer(data.cv_data)) buf = data.cv_data;
+      else return res.status(500).send('Format CV inconnu');
+
+      const filename = (data.cv_original_name || `cv-${appId}.pdf`).replace(/[\r\n"]/g, '_');
+      res.set({
+        'Content-Type': data.cv_mime || 'application/octet-stream',
+        'Content-Length': String(buf.length),
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        'Cache-Control': 'no-store, private',
+      });
+      return res.end(buf);
+    }
+
+    return res.status(404).json({ error: 'Action non trouvée' });
+  } catch (e) {
+    console.error('applications.php', e);
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // BLOG — commentaires (wp_post_id = ID REST article WordPress)
 // ══════════════════════════════════════════════════════════════════════════════
 const BLOG_COMMENT_HITS = new Map();

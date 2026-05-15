@@ -206,152 +206,6 @@ export type Feedback = {
   status: 'nouveau'|'traite'|'archive'; created_at: string;
 };
 
-export type BureauBlogArticle = {
-  id: string;
-  slug: string;
-  title: string;
-  excerpt: string;
-  body_html: string;
-  featured_image_url: string | null;
-  categories: string[];
-  published: boolean;
-  published_at: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export type BureauBlogComment = {
-  id: string;
-  article_id: string;
-  author_name: string;
-  author_email: string;
-  body: string;
-  created_at: string;
-  article_title?: string;
-};
-
-export type BureauCareerOffer = {
-  id: string;
-  position_key: string;
-  title_fr: string;
-  title_en: string;
-  meta_fr: string;
-  meta_en: string;
-  summary_fr: string;
-  summary_en: string;
-  detail_fr: string;
-  detail_en: string;
-  sort_order: number;
-  published: boolean;
-  published_at: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-export const careersOffersApi = {
-  list: () =>
-    request<{ offers: BureauCareerOffer[] }>("careers-offers.php", "GET", undefined, {
-      action: "list",
-    }).then((r) => r.offers ?? []),
-
-  get: (id: string) =>
-    request<{ offer: BureauCareerOffer }>("careers-offers.php", "GET", undefined, {
-      action: "get",
-      id,
-    }).then((r) => r.offer),
-
-  create: (data: {
-    position_key: string;
-    title_fr: string;
-    title_en: string;
-    meta_fr?: string;
-    meta_en?: string;
-    summary_fr?: string;
-    summary_en?: string;
-    detail_fr?: string;
-    detail_en?: string;
-    sort_order?: number;
-    published?: boolean;
-    published_at?: string | null;
-  }) =>
-    request<{ ok: boolean; offer: BureauCareerOffer }>(
-      "careers-offers.php",
-      "POST",
-      data,
-      { action: "create" }
-    ),
-
-  update: (id: string, data: Partial<BureauCareerOffer>) =>
-    request<{ ok: boolean; offer: BureauCareerOffer }>(
-      "careers-offers.php",
-      "PUT",
-      data,
-      { action: "update", id }
-    ),
-
-  delete: (id: string) =>
-    request<{ ok: boolean }>("careers-offers.php", "DELETE", undefined, {
-      action: "delete",
-      id,
-    }),
-};
-
-export const blogArticlesApi = {
-  list: () =>
-    request<{ articles: BureauBlogArticle[] }>("blog.php", "GET", undefined, {
-      action: "list",
-    }).then((r) => r.articles ?? []),
-
-  get: (id: string) =>
-    request<{ article: BureauBlogArticle }>("blog.php", "GET", undefined, {
-      action: "get",
-      id,
-    }).then((r) => r.article),
-
-  create: (data: {
-    slug?: string;
-    title: string;
-    excerpt: string;
-    body_html: string;
-    featured_image_url?: string | null;
-    categories?: string[];
-    published?: boolean;
-    published_at?: string | null;
-  }) =>
-    request<{ ok: boolean; article: BureauBlogArticle }>(
-      "blog.php",
-      "POST",
-      data,
-      { action: "create" }
-    ),
-
-  update: (id: string, data: Partial<BureauBlogArticle>) =>
-    request<{ ok: boolean; article: BureauBlogArticle }>(
-      "blog.php",
-      "PUT",
-      data,
-      { action: "update", id }
-    ),
-
-  delete: (id: string) =>
-    request<{ ok: boolean }>("blog.php", "DELETE", undefined, {
-      action: "delete",
-      id,
-    }),
-
-  commentsList: (articleId?: string) =>
-    request<{ comments: BureauBlogComment[] }>("blog.php", "GET", undefined, {
-      action: "comments_list",
-      ...(articleId ? { article_id: articleId } : {}),
-    }).then((r) => r.comments ?? []),
-
-  commentDelete: (commentId: string) =>
-    request<{ ok: boolean }>("blog.php", "DELETE", undefined, {
-      action: "comment_delete",
-      id: commentId,
-    }),
-};
-
 // ── Leads (demandes de projet depuis le formulaire contact) ───────────────────
 export type LeadDomain =
   | "juridique"
@@ -486,6 +340,78 @@ export const jobOffersApi = {
   update: (id: number, data: JobOfferInput) =>
     request<{ success: boolean; offer: JobOfferAdmin }>("job_offers.php", "PUT", data, { action: "update", id: String(id) }),
   delete: (id: number) => request("job_offers.php", "DELETE", undefined, { action: "delete", id: String(id) }),
+};
+
+// ── Candidatures (job_applications) ──────────────────────────────────────────
+export type JobApplication = {
+  id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone?: string | null;
+  city_country?: string | null;
+  linkedin_url?: string | null;
+  position_applied: string;
+  contract_type: string;
+  availability?: string | null;
+  experience_years?: string | null;
+  education_level?: string | null;
+  languages?: string | null;
+  motivation: string;
+  application_mode?: 'offer' | 'profile_pool' | 'spontaneous' | null;
+  job_offer_ref?: string | null;
+  sought_role_title?: string | null;
+  cv_original_name?: string | null;
+  cv_mime?: string | null;
+  cv_size_bytes?: number | null;
+  locale?: 'fr' | 'en';
+  consent_data_processing: boolean;
+  status: 'nouveau' | 'examine' | 'entretien' | 'refuse' | 'embauche' | 'archive';
+  notes?: string | null;
+  assigned_to?: number | null;
+  agent_name?: string | null;
+  created_at: string;
+  updated_at?: string;
+};
+
+export type JobApplicationStats = {
+  total: number;
+  nouveau: number;
+  examine: number;
+  entretien: number;
+  refuse: number;
+  embauche: number;
+  archive: number;
+};
+
+export const applicationsApi = {
+  list: () => request<JobApplication[]>('applications.php', 'GET', undefined, { action: 'list' }),
+  stats: () => request<JobApplicationStats>('applications.php', 'GET', undefined, { action: 'stats' }),
+  update: (id: number, data: Partial<Pick<JobApplication, 'status' | 'notes' | 'assigned_to'>>) =>
+    request('applications.php', 'PUT', data, { action: 'update', id: String(id) }),
+  delete: (id: number) => request('applications.php', 'DELETE', undefined, { action: 'delete', id: String(id) }),
+  /** Ouvre le CV dans un nouvel onglet (auth via header, blob URL). */
+  openCv: async (id: number, suggestedName?: string): Promise<void> => {
+    const url = new URL(`${BASE}/applications.php`, window.location.origin);
+    url.searchParams.set('action', 'cv');
+    url.searchParams.set('id', String(id));
+    const token = localStorage.getItem('bureau_token') ?? '';
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`Erreur ${res.status} lors du téléchargement du CV`);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const win = window.open(blobUrl, '_blank', 'noopener,noreferrer');
+    if (!win) {
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = suggestedName || `cv-${id}`;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  },
 };
 
 // ── Mailbox LWS (super_admin) ────────────────────────────────────────────────

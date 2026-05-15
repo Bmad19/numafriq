@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth, hasRole } from "./BureauContext";
-import { leadsApi, agentClientApi, userHasPermission, type PermissionKey } from "./api";
+import { leadsApi, applicationsApi, agentClientApi, userHasPermission, type PermissionKey } from "./api";
 
 type NavEntry = {
   to: string;
@@ -16,7 +16,7 @@ type NavEntry = {
 
 const NAV: NavEntry[] = [
   { to: "/bureau/overview",      label: "Vue d'ensemble",  icon: <GridIcon />,    min: "agent" },
-  { to: "/bureau/leads",         label: "Demandes",        icon: <LeadsIcon />,   min: "agent",       perm: "leads",      badge: "leads" },
+  { to: "/bureau/inbox",         label: "Boîte de réception", icon: <InboxStackIcon />, min: "agent", perm: "leads",      badge: "inbox" },
   { to: "/bureau/assistant",     label: "Assistant",       icon: <SparkIcon />,   min: "agent",       perm: "assistant" },
   { to: "/bureau/projets",       label: "Projets",         icon: <FolderIcon />,  min: "agent",       perm: "projects" },
   { to: "/bureau/missions",      label: "Mes missions",    icon: <TaskIcon />,    min: "agent",       perm: "missions" },
@@ -34,19 +34,29 @@ const NAV: NavEntry[] = [
 export function DashboardLayout() {
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
-  const [newLeads, setNewLeads]     = useState(0);
+  const [newInbox, setNewInbox]     = useState(0);
   const [newClients, setNewClients] = useState(0);
 
   useEffect(() => {
+    let cancel = false;
     function fetchBadges() {
-      leadsApi.stats().then(s => setNewLeads(s.nouveau)).catch(() => {});
+      Promise.allSettled([
+        leadsApi.stats(),
+        applicationsApi.stats().catch(() => null),
+      ]).then(([lr, ar]) => {
+        if (cancel) return;
+        const newLeads = lr.status === "fulfilled" ? (lr.value.nouveau ?? 0) : 0;
+        const newApps  = ar.status === "fulfilled" && ar.value ? (ar.value.nouveau ?? 0) : 0;
+        setNewInbox(newLeads + newApps);
+      });
       agentClientApi.conversations().then(convs => {
+        if (cancel) return;
         setNewClients(convs.reduce((sum, c) => sum + (c.unread ?? 0), 0));
       }).catch(() => {});
     }
     fetchBadges();
     const t = setInterval(fetchBadges, 20000);
-    return () => clearInterval(t);
+    return () => { cancel = true; clearInterval(t); };
   }, []);
 
   const visibleNav = NAV.filter(n => hasRole(user, n.min) && (!n.perm || userHasPermission(user, n.perm)));
@@ -117,9 +127,9 @@ export function DashboardLayout() {
                 >
                   <span className="shrink-0">{n.icon}</span>
                   <span className="flex-1">{n.label}</span>
-                  {n.badge === "leads" && newLeads > 0 && (
-                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-coral px-1.5 text-[10px] font-bold text-white">
-                      {newLeads}
+                  {n.badge === "inbox" && newInbox > 0 && (
+                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-coral px-1.5 text-[10px] font-bold text-white" title={`${newInbox} nouveaux éléments (demandes + candidatures)`}>
+                      {newInbox}
                     </span>
                   )}
                   {n.badge === "clients" && newClients > 0 && (
@@ -231,6 +241,14 @@ function MailIcon() {
     <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
       <rect x="2" y="4" width="20" height="16" rx="2" />
       <path d="M22 6l-10 7L2 6" />
+    </svg>
+  );
+}
+function InboxStackIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+      <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />
     </svg>
   );
 }

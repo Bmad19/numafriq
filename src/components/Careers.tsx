@@ -56,18 +56,70 @@ type RenderableOffer = {
   item: RenderableOfferItem;
 };
 
+/**
+ * Parse un contenu markdown-like en sections {title, paragraphs?, bullets?}
+ * Conventions :
+ *   - `## Titre`             → début d'une nouvelle section
+ *   - `- item` / `* item` / `• item`  → puce dans la section courante
+ *   - texte normal           → paragraphe dans la section courante
+ *   - double saut de ligne   → sépare les paragraphes
+ */
 function dynamicSections(content: string | null | undefined): RenderableOfferItem["sections"] {
-  const text = (content ?? "").trim();
-  if (!text) return undefined;
-  // Sépare en paragraphes (double saut de ligne ou balise <p>)
-  const parts = text
+  const raw = (content ?? "").trim();
+  if (!raw) return undefined;
+  const text = raw
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/?p[^>]*>/gi, "\n\n")
-    .split(/\n{2,}/)
-    .map((p) => p.replace(/<[^>]*>/g, "").trim())
-    .filter(Boolean);
-  if (parts.length === 0) return undefined;
-  return [{ title: "Description", paragraphs: parts }];
+    .replace(/<[^>]*>/g, "");
+
+  type Sec = { title: string; paragraphs: string[]; bullets: string[] };
+  const sections: Sec[] = [];
+  let current: Sec | null = null;
+  const ensure = () => {
+    if (!current) {
+      current = { title: "Description", paragraphs: [], bullets: [] };
+      sections.push(current);
+    }
+    return current;
+  };
+
+  let pendingPara: string[] = [];
+  const flushPara = () => {
+    if (pendingPara.length === 0) return;
+    const p = pendingPara.join(" ").trim();
+    pendingPara = [];
+    if (p) ensure().paragraphs.push(p);
+  };
+
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed === "") { flushPara(); continue; }
+
+    const headingMatch = trimmed.match(/^#{2,3}\s+(.+)$/);
+    if (headingMatch) {
+      flushPara();
+      current = { title: headingMatch[1].trim(), paragraphs: [], bullets: [] };
+      sections.push(current);
+      continue;
+    }
+
+    const bulletMatch = trimmed.match(/^[-*•·]\s+(.+)$/);
+    if (bulletMatch) {
+      flushPara();
+      ensure().bullets.push(bulletMatch[1].trim());
+      continue;
+    }
+
+    pendingPara.push(trimmed);
+  }
+  flushPara();
+
+  if (sections.length === 0) return undefined;
+  return sections.map((s) => ({
+    title: s.title,
+    paragraphs: s.paragraphs.length ? s.paragraphs : undefined,
+    bullets: s.bullets.length ? s.bullets : undefined,
+  }));
 }
 
 export function Careers() {

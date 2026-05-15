@@ -25,7 +25,7 @@ export function OverviewPage() {
   const kpis = [
     { label: "Projets actifs",        value: stats?.en_cours ?? "–",  color: "text-lime",   border: "border-lime/20",   to: "/bureau/projets" },
     { label: "Budget total (FCFA)",   value: stats ? `${(stats.budget_total/1_000_000).toFixed(1)}M` : "–", color: "text-white", border: "border-white/10", to: "/bureau/comptabilite" },
-    { label: "Nouvelles demandes",    value: leadStats?.nouveau ?? "–", color: "text-coral", border: "border-coral/30",  alert: (leadStats?.nouveau ?? 0) > 0, to: "/bureau/leads" },
+    { label: "Nouvelles demandes",    value: leadStats?.nouveau ?? "–", color: "text-coral", border: "border-coral/30",  alert: (leadStats?.nouveau ?? 0) > 0, to: "/bureau/inbox" },
     { label: "Messages clients",      value: totalUnreadClients || "–", color: "text-lime",  border: "border-lime/20",   alert: totalUnreadClients > 0, to: "/bureau/clients" },
   ];
 
@@ -103,7 +103,7 @@ export function OverviewPage() {
                 Demandes récentes ({leadStats?.nouveau ?? 0} nouvelles)
               </h2>
             </div>
-            <NavLink to="/bureau/leads" className="text-xs font-semibold text-coral hover:underline">
+            <NavLink to="/bureau/inbox" className="text-xs font-semibold text-coral hover:underline">
               Voir tout →
             </NavLink>
           </div>
@@ -127,7 +127,7 @@ export function OverviewPage() {
               </motion.div>
             ))}
           </div>
-          <NavLink to="/bureau/leads"
+          <NavLink to="/bureau/inbox"
             className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-coral/20 bg-coral/5 py-3 text-sm font-semibold text-coral hover:bg-coral/10 transition">
             Gérer toutes les demandes →
           </NavLink>
@@ -139,7 +139,7 @@ export function OverviewPage() {
         {[
           { label: "Projets terminés",  value: stats?.termine ?? "–",  color: "text-violet", icon: "✓", to: "/bureau/projets" },
           { label: "En pause",          value: stats?.en_pause ?? "–",  color: "text-violet", icon: "⏸", to: "/bureau/projets" },
-          { label: "Total demandes",    value: leadStats?.total ?? "–", color: "text-white",  icon: "📋", to: "/bureau/leads" },
+          { label: "Total demandes",    value: leadStats?.total ?? "–", color: "text-white",  icon: "📋", to: "/bureau/inbox" },
         ].map((s, i) => (
           <motion.div key={s.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 + i * 0.07 }}>
             <NavLink to={s.to} className={`${card} flex items-center gap-4 hover:border-white/20 transition block`}>
