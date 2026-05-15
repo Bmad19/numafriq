@@ -56,49 +56,103 @@ export function EquipePage() {
   const [form, setForm]     = useState<FormState>(emptyForm());
   const [msg, setMsg]       = useState("");
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const load = () => usersApi.list().then(setUsers).catch(() => {}).finally(() => setLoading(false));
   useEffect(() => { load(); }, []);
 
+  function validateLocal(): string | null {
+    const fullName = (form.full_name ?? "").trim();
+    const username = (form.username ?? "").trim();
+    if (!fullName) return "Le nom complet est requis.";
+    if (!username) return "L'identifiant est requis.";
+    if (!/^[a-zA-Z0-9._-]{2,64}$/.test(username)) {
+      return "Identifiant invalide : 2 à 64 caractères, lettres, chiffres, point, tiret ou underscore uniquement.";
+    }
+    if (modal === "create") {
+      const pwd = form.password ?? "";
+      if (!pwd) return "Le mot de passe initial est requis.";
+      if (pwd.length < 6) return "Le mot de passe doit faire au moins 6 caractères.";
+    }
+    const email = (form.email ?? "").trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return "Adresse email invalide.";
+    }
+    return null;
+  }
+
   async function saveUser() {
+    if (saving) return;
+    setFormError(null);
+    const localErr = validateLocal();
+    if (localErr) { setFormError(localErr); return; }
+
+    const role = form.role ?? "agent";
+    // Garde-fou : si « Accès complet » décoché sans aucun module coché,
+    // l'API stocke null (= accès complet), ce qui est trompeur. On confirme.
+    if (role !== "super_admin" && !form.permsAll && form.permsSet.size === 0) {
+      const ok = confirm(
+        "Aucun module n'est coché.\n\n" +
+        "→ « OK » : enregistrer en remettant l'agent en accès complet (selon son rôle).\n" +
+        "→ « Annuler » : revenir au formulaire pour cocher au moins un module.",
+      );
+      if (!ok) return;
+    }
+    const permissionsCsv = role === "super_admin" ? null : setToCsv(form.permsAll, form.permsSet);
+    const fullName = (form.full_name ?? "").trim();
+    const username = (form.username ?? "").trim();
+    const email = (form.email ?? "").trim() || null;
+    const payload = {
+      username,
+      full_name: fullName,
+      email,
+      role,
+      active: form.active ?? true,
+      practice_domains: form.practice_domains ?? null,
+      permissions: permissionsCsv,
+    };
+
+    setSaving(true);
     try {
-      const role = form.role ?? "agent";
-      // Garde-fou : si l'utilisateur décoche « accès complet » sans cocher aucun module,
-      // l'API stocke null (= accès complet), ce qui est trompeur. On confirme ou on bloque.
-      if (role !== "super_admin" && !form.permsAll && form.permsSet.size === 0) {
-        const ok = confirm(
-          "Aucun module n'est coché.\n\n" +
-          "→ « Annuler » : ré-activer « Accès complet » pour cocher au moins un module.\n" +
-          "→ « OK » : enregistrer en remettant l'agent en accès complet (selon son rôle).\n\n" +
-          "Pour limiter l'agent à un module précis, cochez-le explicitement avant d'enregistrer.",
-        );
-        if (!ok) return;
-      }
-      const permissionsCsv = role === "super_admin" ? null : setToCsv(form.permsAll, form.permsSet);
-      const payload = {
-        username: form.username,
-        full_name: form.full_name,
-        email: form.email,
-        role,
-        active: form.active ?? true,
-        practice_domains: form.practice_domains ?? null,
-        permissions: permissionsCsv,
-      };
       if (modal === "create") {
-        if (!form.password) return alert("Mot de passe requis.");
-        await usersApi.create({ ...payload, password: form.password } as Parameters<typeof usersApi.create>[0]);
+        await usersApi.create({ ...payload, password: form.password as string } as Parameters<typeof usersApi.create>[0]);
+        setMsg(`Agent « ${fullName} » créé avec succès.`);
       } else if (form.id) {
         await usersApi.update(form.id, payload);
+        setMsg(`Agent « ${fullName} » mis à jour.`);
       }
-      setMsg("Utilisateur enregistré !"); setModal(null); load();
-      setTimeout(() => setMsg(""), 3500);
-    } catch (e: unknown) { alert(e instanceof Error ? e.message : "Erreur"); }
+      setModal(null);
+      setFormError(null);
+      load();
+      setTimeout(() => setMsg(""), 4000);
+    } catch (e: unknown) {
+      // Affiche l'erreur DANS le modal (pas d'alert qui ferme et qu'on perd)
+      const m = e instanceof Error ? e.message : "Erreur inconnue";
+      setFormError(m);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function resetPw() {
-    if (!form.id || !form.password) return;
-    try { await usersApi.resetPassword(form.id, form.password); setMsg("Mot de passe réinitialisé."); setModal(null); }
-    catch (e: unknown) { alert(e instanceof Error ? e.message : "Erreur"); }
+    if (!form.id || !form.password) {
+      setFormError("Saisir un nouveau mot de passe.");
+      return;
+    }
+    if (saving) return;
+    setSaving(true);
+    setFormError(null);
+    try {
+      await usersApi.resetPassword(form.id, form.password);
+      setMsg("Mot de passe réinitialisé.");
+      setModal(null);
+      setTimeout(() => setMsg(""), 4000);
+    } catch (e: unknown) {
+      setFormError(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function toggle(u: BureauUser) {
@@ -110,6 +164,7 @@ export function EquipePage() {
     const f = emptyForm();
     f.permsAll = true;
     setForm(f);
+    setFormError(null);
     setModal("create");
   }
 
@@ -121,6 +176,7 @@ export function EquipePage() {
       permsAll: u.role === "super_admin" ? true : all,
       permsSet: set,
     });
+    setFormError(null);
     setModal("edit");
   }
 
@@ -162,7 +218,6 @@ export function EquipePage() {
         </button>
       </div>
 
-      {msg && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm text-lime bg-lime/10 border border-lime/20 rounded-xl px-4 py-3">{msg}</motion.div>}
 
       {loading ? <p className="text-white/55 text-center py-20">Chargement…</p> : (
         <div className="rounded-2xl border border-white/[0.08] overflow-hidden">
@@ -382,9 +437,36 @@ export function EquipePage() {
                 </div>
               </div>
 
+              {formError && (
+                <div className="px-6 pt-2">
+                  <div role="alert" className="rounded-xl border border-coral/35 bg-coral/10 px-4 py-3 text-sm text-coral leading-relaxed">
+                    <span className="font-bold">⚠ Erreur :</span> {formError}
+                  </div>
+                </div>
+              )}
+
               <div className="border-t border-white/[0.07] px-6 py-4 flex gap-3">
-                <button onClick={() => setModal(null)} className="flex-1 rounded-xl border border-white/10 py-3 text-sm text-white/50 hover:text-white transition">Annuler</button>
-                <button onClick={saveUser} className="flex-1 rounded-xl bg-coral py-3 text-sm font-bold text-white hover:brightness-110 transition">Enregistrer</button>
+                <button
+                  onClick={() => setModal(null)}
+                  disabled={saving}
+                  className="flex-1 rounded-xl border border-white/10 py-3 text-sm text-white/50 hover:text-white transition disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  onClick={saveUser}
+                  disabled={saving}
+                  className="flex-1 rounded-xl bg-coral py-3 text-sm font-bold text-white hover:brightness-110 transition disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                >
+                  {saving ? (
+                    <>
+                      <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                      Enregistrement…
+                    </>
+                  ) : (
+                    modal === "create" ? "Créer l'agent" : "Enregistrer"
+                  )}
+                </button>
               </div>
             </motion.div>
           </motion.div>
@@ -400,12 +482,37 @@ export function EquipePage() {
               <p className="text-sm text-white/40 mb-5">Pour : <span className="text-white font-semibold">{form.full_name}</span></p>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-white/40 mb-1.5">Nouveau mot de passe temporaire</label>
               <input value={form.password ?? ""} onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white focus:outline-none mb-5" />
+                className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white focus:outline-none mb-3" />
+              {formError && (
+                <div role="alert" className="mb-3 rounded-xl border border-coral/35 bg-coral/10 px-3 py-2 text-xs text-coral">
+                  <span className="font-bold">⚠</span> {formError}
+                </div>
+              )}
               <div className="flex gap-3">
-                <button onClick={() => setModal(null)} className="flex-1 rounded-xl border border-white/10 py-3 text-sm text-white/50 hover:text-white transition">Annuler</button>
-                <button onClick={resetPw} className="flex-1 rounded-xl bg-violet py-3 text-sm font-bold text-ink hover:brightness-110 transition">Réinitialiser</button>
+                <button onClick={() => setModal(null)} disabled={saving} className="flex-1 rounded-xl border border-white/10 py-3 text-sm text-white/50 hover:text-white transition disabled:opacity-50">Annuler</button>
+                <button onClick={resetPw} disabled={saving} className="flex-1 rounded-xl bg-violet py-3 text-sm font-bold text-ink hover:brightness-110 transition disabled:opacity-60 inline-flex items-center justify-center gap-2">
+                  {saving ? (
+                    <>
+                      <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-ink/40 border-t-ink" />
+                      Réinitialisation…
+                    </>
+                  ) : "Réinitialiser"}
+                </button>
               </div>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast succès — bottom center */}
+      <AnimatePresence>
+        {msg && !modal && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60] rounded-full border border-lime/30 bg-lime/15 px-6 py-3 text-sm font-semibold text-lime backdrop-blur-xl shadow-lg"
+            role="status"
+          >
+            ✓ {msg}
           </motion.div>
         )}
       </AnimatePresence>
