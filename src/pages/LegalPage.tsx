@@ -1,5 +1,6 @@
 import { PageHero } from "../components/PageHero";
 import { Seo } from "../components/Seo";
+import { LEGAL_PAGE_HERO_IMAGE, LEGAL_PAGE_HERO_IMAGE_POSITION } from "../config/siteImagery";
 import { AnimateIn } from "../components/animations/AnimateIn";
 
 type LegalPageProps = {
@@ -11,46 +12,43 @@ export function LegalPage({ title }: LegalPageProps) {
 
   return (
     <>
-      <Seo title={title} description={`Page de ${title.toLowerCase()} de l'agence NUMAFRIQ`} />
+      <Seo title={title} description={`${title} — Afrilex Conseil, cabinet d'assistance juridique, fiscale et comptable.`} />
       <PageHero
         eyebrow="Informations légales"
         title={title}
         description={
           isMentions
-            ? "Retrouvez ici toutes les informations légales concernant l'agence NUMAFRIQ et l'éditeur du site."
+            ? "Informations légales concernant Afrilex Conseil et l'éditeur du présent site."
             : "Découvrez comment nous collectons, utilisons et protégeons vos données personnelles."
         }
-        image="https://images.unsplash.com/photo-1589829085413-56de8ae18c73?auto=format&fit=crop&w=1920&q=80"
+        image={LEGAL_PAGE_HERO_IMAGE}
+        imageObjectPosition={LEGAL_PAGE_HERO_IMAGE_POSITION}
         primaryLabel="Retour à l'accueil"
         primaryTo="/"
       />
       <div className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
         <AnimateIn>
-          <div className="prose prose-invert prose-mist max-w-none text-mist/80">
+          <div className="prose prose-lg prose-invert max-w-none text-mist/90 leading-relaxed">
             {isMentions ? (
               <div className="space-y-8">
                 <section>
                   <h2 className="font-display text-2xl font-bold text-mist">1. Éditeur du site</h2>
                   <p className="mt-3 leading-relaxed">
-                    Le site <strong>NUMAFRIQ</strong> est édité par l'agence NUMAFRIQ, agence web et digitale intervenant en Afrique et à l'international.
+                    Le site est édité par <strong>Afrilex Conseil</strong>, cabinet d&apos;assistance juridique, fiscale et comptable, implanté à Ouagadougou (Burkina Faso). Zones d&apos;intervention : Afrique de l&apos;Ouest, autres pays OHADA et diaspora.
                   </p>
                   <ul className="mt-4 list-disc pl-5 space-y-2">
-                    <li><strong>Siège social :</strong> [Adresse de l'agence, ex: Ouagadougou, Burkina Faso]</li>
-                    <li><strong>Email de contact :</strong> <a href="mailto:info@numafriq.com" className="text-lime hover:underline">info@numafriq.com</a></li>
-                    <li><strong>Téléphone :</strong> [Numéro de téléphone de l'agence]</li>
-                    <li><strong>Directeur de la publication :</strong> [Nom du responsable]</li>
+                    <li><strong>Siège :</strong> Ouagadougou, Burkina Faso</li>
+                    <li><strong>Email :</strong> <a href="mailto:info@afrilexconseil.com" className="text-lime hover:underline">info@afrilexconseil.com</a></li>
+                    <li><strong>Téléphone / WhatsApp :</strong> +226 52 20 91 91</li>
+                    <li><strong>Site de référence :</strong> <a href="https://afrilexconseil.com/" className="text-lime hover:underline" target="_blank" rel="noopener noreferrer">afrilexconseil.com</a></li>
                   </ul>
                 </section>
 
                 <section>
                   <h2 className="font-display text-2xl font-bold text-mist">2. Hébergement</h2>
                   <p className="mt-3 leading-relaxed">
-                    Ce site est hébergé par <strong>[Nom de l'hébergeur]</strong>.
+                    Les informations relatives à l'hébergeur du présent site peuvent être communiquées sur demande à l'adresse <a href="mailto:info@afrilexconseil.com" className="text-lime hover:underline">info@afrilexconseil.com</a>.
                   </p>
-                  <ul className="mt-4 list-disc pl-5 space-y-2">
-                    <li><strong>Siège social de l'hébergeur :</strong> [Adresse de l'hébergeur]</li>
-                    <li><strong>Site web de l'hébergeur :</strong> [Lien vers l'hébergeur]</li>
-                  </ul>
                 </section>
 
                 <section>
@@ -66,7 +64,7 @@ export function LegalPage({ title }: LegalPageProps) {
                 <section>
                   <h2 className="font-display text-2xl font-bold text-mist">4. Responsabilité</h2>
                   <p className="mt-3 leading-relaxed">
-                    L'agence NUMAFRIQ s'efforce d'assurer au mieux l'exactitude et la mise à jour des informations diffusées sur ce site, dont elle se réserve le droit de corriger, à tout moment et sans préavis, le contenu. Toutefois, NUMAFRIQ ne peut garantir l'exactitude, la précision ou l'exhaustivité des informations mises à disposition sur ce site.
+                    Afrilex Conseil s'efforce d'assurer au mieux l'exactitude et la mise à jour des informations diffusées sur ce site et se réserve le droit d'en modifier le contenu à tout moment et sans préavis. Les informations présentées le sont à titre général ; une analyse juridique, fiscale ou comptable personnalisée requiert un mandat formel avec le cabinet.
                   </p>
                 </section>
               </div>
@@ -75,13 +73,13 @@ export function LegalPage({ title }: LegalPageProps) {
                 <section>
                   <h2 className="font-display text-2xl font-bold text-mist">1. Collecte des données personnelles</h2>
                   <p className="mt-3 leading-relaxed">
-                    Lors de votre navigation sur le site de <strong>NUMAFRIQ</strong>, nous sommes susceptibles de recueillir les données personnelles suivantes, notamment via nos formulaires de contact :
+                    Lors de votre navigation sur ce site, nous sommes susceptibles de recueillir les données personnelles suivantes, notamment via le formulaire de contact :
                   </p>
                   <ul className="mt-4 list-disc pl-5 space-y-2">
                     <li>Noms et prénoms</li>
                     <li>Adresse email professionnelle</li>
                     <li>Numéro de téléphone</li>
-                    <li>Informations relatives à votre projet (budget, délais, besoins)</li>
+                    <li>Détails relatifs à votre demande juridique, fiscale ou comptable</li>
                   </ul>
                 </section>
 
@@ -91,8 +89,8 @@ export function LegalPage({ title }: LegalPageProps) {
                     Les données collectées sont utilisées exclusivement pour :
                   </p>
                   <ul className="mt-4 list-disc pl-5 space-y-2">
-                    <li>Répondre à vos demandes de devis ou d'information</li>
-                    <li>Vous recontacter dans le cadre d'un projet de collaboration</li>
+                    <li>Répondre à vos demandes d'information ou de prise de contact</li>
+                    <li>Vous recontacter dans le cadre d'une éventuelle mission</li>
                     <li>Améliorer votre expérience de navigation sur notre site (données analytiques anonymisées)</li>
                   </ul>
                   <p className="mt-2 leading-relaxed">
@@ -101,28 +99,28 @@ export function LegalPage({ title }: LegalPageProps) {
                 </section>
 
                 <section>
-                  <h2 className="font-display text-2xl font-bold text-mist">3. Conservation et Sécurité</h2>
+                  <h2 className="font-display text-2xl font-bold text-mist">3. Conservation et sécurité</h2>
                   <p className="mt-3 leading-relaxed">
-                    Nous mettons en œuvre toutes les mesures de sécurité nécessaires pour protéger vos informations personnelles contre tout accès, modification, divulgation ou destruction non autorisés. 
-                    Les données sont conservées pendant une durée de 3 ans maximum après le dernier contact.
+                    Nous mettons en œuvre les mesures appropriées pour protéger vos informations contre tout accès, modification, divulgation ou destruction non autorisés.
+                    Les données sont conservées pendant une durée proportionnée aux finalités (souvent jusqu'à trois ans après le dernier contact sauf obligations légales contraires).
                   </p>
                 </section>
 
                 <section>
                   <h2 className="font-display text-2xl font-bold text-mist">4. Droits des utilisateurs</h2>
                   <p className="mt-3 leading-relaxed">
-                    Conformément aux réglementations en vigueur (notamment le RGPD si applicable), vous disposez d'un droit d'accès, de rectification, de suppression et d'opposition aux données personnelles vous concernant. 
+                    Conformément aux réglementations applicables, vous disposez notamment de droits d'accès, de rectification, de suppression et d'opposition pour les données vous concernant.
                   </p>
                   <p className="mt-2 leading-relaxed">
-                    Pour exercer ces droits, vous pouvez nous contacter à l'adresse suivante : 
-                    <a href="mailto:info@numafriq.com" className="ml-1 text-lime hover:underline">info@numafriq.com</a>.
+                    Pour exercer ces droits :{" "}
+                    <a href="mailto:info@afrilexconseil.com" className="ml-1 text-lime hover:underline">info@afrilexconseil.com</a>.
                   </p>
                 </section>
-                
+
                 <section>
                   <h2 className="font-display text-2xl font-bold text-mist">5. Cookies</h2>
                   <p className="mt-3 leading-relaxed">
-                    Le site NUMAFRIQ peut utiliser des cookies strictement nécessaires au fonctionnement du site et des cookies de mesure d'audience anonyme. Vous avez la possibilité de désactiver ces cookies via les paramètres de votre navigateur web.
+                    Ce site peut utiliser des cookies strictement nécessaires au fonctionnement et, le cas échéant, des cookies de mesure d'audience anonyme. Vous pouvez les désactiver via les paramètres de votre navigateur.
                   </p>
                 </section>
               </div>

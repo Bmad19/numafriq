@@ -31,7 +31,7 @@ function upsertCanonical(href: string) {
 
 export function Seo({ title, description }: SeoProps) {
   useEffect(() => {
-    const fullTitle = `${title} | NUMAFRIQ`;
+    const fullTitle = `${title} | Afrilex Conseil`;
     const url = window.location.href;
 
     document.title = fullTitle;

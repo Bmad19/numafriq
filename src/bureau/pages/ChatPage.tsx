@@ -117,8 +117,10 @@ export function ChatPage() {
   const initials = (name?: string) => (name ?? "?").split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
 
   const avatarColors = [
-    "from-coral to-violet", "from-lime/80 to-lime/40",
-    "from-violet to-blue-500", "from-orange-400 to-amber-300",
+    "from-coral to-violet",
+    "from-lime/90 to-mist/50",
+    "from-violet to-coral/80",
+    "from-mist/50 to-coral/40",
   ];
   const avatarColor = (id: number) => avatarColors[id % avatarColors.length];
 
@@ -128,12 +130,12 @@ export function ChatPage() {
       {/* ── Sidebar canaux ─────────────────────────────────────────────── */}
       <div className="w-56 shrink-0 bg-white/[0.02] border-r border-white/[0.07] flex flex-col overflow-hidden">
         <div className="px-4 pt-4 pb-3 border-b border-white/[0.06]">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-white/30">Chat Interne</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/55">Chat Interne</p>
         </div>
 
         {/* Canaux publics */}
         <div className="flex-1 overflow-y-auto py-2">
-          <p className="px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-white/25">Canaux</p>
+          <p className="px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-white/48">Canaux</p>
           {PUBLIC_CHANNELS.map(ch => (
             <button key={ch.id} onClick={() => setActiveChannel(ch.id)}
               className={`w-full flex items-center gap-2.5 px-4 py-2 text-left transition-all rounded-lg mx-1 ${
@@ -149,7 +151,7 @@ export function ChatPage() {
           {/* Messages privés */}
           <div className="mt-3 border-t border-white/[0.06] pt-3">
             <div className="flex items-center justify-between px-4 pb-2">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-white/25">Privés</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-white/48">Privés</p>
               <div className="flex items-center gap-1">
                 {totalUnreadDms > 0 && (
                   <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-coral text-[9px] font-bold text-white px-1">
@@ -199,7 +201,7 @@ export function ChatPage() {
 
             {showUsers && (
               <button onClick={() => setShowUsers(false)}
-                className="w-full px-4 py-1.5 text-[10px] text-white/25 hover:text-white/50 transition">
+                className="w-full px-4 py-1.5 text-[10px] text-white/48 hover:text-white/50 transition">
                 Masquer ↑
               </button>
             )}
@@ -213,14 +215,14 @@ export function ChatPage() {
           </div>
           <div className="min-w-0">
             <p className="text-xs font-semibold text-white truncate">{user?.full_name}</p>
-            <p className="text-[10px] text-white/30 truncate">{user?.role}</p>
+            <p className="text-[10px] text-white/55 truncate">{user?.role}</p>
           </div>
           <div className="ml-auto h-2 w-2 rounded-full bg-lime shrink-0" />
         </div>
       </div>
 
       {/* ── Zone messages ──────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-[#08090b]">
+      <div className="flex-1 flex flex-col overflow-hidden bg-ink">
 
         {/* Header canal */}
         <div className="border-b border-white/[0.07] px-5 py-3.5 flex items-center gap-3">
@@ -238,7 +240,7 @@ export function ChatPage() {
               </h2>
             </div>
             {!isDm && pubChan && (
-              <p className="text-[11px] text-white/30 mt-0.5">{pubChan.desc}</p>
+              <p className="text-[11px] text-white/55 mt-0.5">{pubChan.desc}</p>
             )}
           </div>
           <div className="ml-auto flex items-center gap-2">
@@ -254,7 +256,7 @@ export function ChatPage() {
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
               <p className="text-4xl">{isDm ? "💬" : (pubChan?.icon ?? "💬")}</p>
-              <p className="text-white/30 text-sm">
+              <p className="text-white/55 text-sm">
                 {isDm
                   ? `Début de votre conversation avec ${dmAgent?.full_name}`
                   : `Bienvenue dans #${channelTitle} — soyez le premier à écrire !`}
@@ -276,7 +278,7 @@ export function ChatPage() {
                 <div key={msg.id}>
                   {showDate && (
                     <div className="text-center py-3">
-                      <span className="text-[10px] font-semibold uppercase tracking-widest text-white/25 bg-white/5 rounded-full px-3 py-1">{d}</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-white/48 bg-white/5 rounded-full px-3 py-1">{d}</span>
                     </div>
                   )}
                   <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.15 }}
@@ -298,7 +300,7 @@ export function ChatPage() {
                           : "rounded-tl-sm bg-white/[0.06] border border-white/[0.08] text-white/85"
                       }`}>
                         {msg.content}
-                        <span className="absolute -bottom-4 text-[9px] text-white/20 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                        <span className="absolute -bottom-4 text-[9px] text-white/48 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                           {timeStr(msg.created_at)}
                         </span>
                       </div>
@@ -319,7 +321,7 @@ export function ChatPage() {
               onChange={e => setInput(e.target.value)}
               placeholder={isDm ? `Message à ${dmAgent?.full_name ?? "…"}` : `Message dans #${channelTitle}`}
               disabled={sending}
-              className="flex-1 bg-transparent text-sm text-white placeholder:text-white/25 focus:outline-none"
+              className="flex-1 bg-transparent text-sm text-white placeholder:text-white/50 focus:outline-none"
             />
             <button type="submit" disabled={!input.trim() || sending}
               className="shrink-0 h-9 w-9 flex items-center justify-center rounded-xl bg-coral text-white hover:brightness-110 transition active:scale-95 disabled:opacity-30">

@@ -24,8 +24,8 @@ export function Pricing() {
             <h2 className="mt-3 font-display text-3xl font-bold text-mist sm:text-4xl text-balance">
               {t("pricing.title")}
             </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-mist/60">{t("pricing.sub")}</p>
-            <p className="mx-auto mt-3 max-w-2xl text-sm text-mist/45">{t("pricing.sub2")}</p>
+            <p className="mx-auto mt-4 max-w-2xl text-mist/78">{t("pricing.sub")}</p>
+            <p className="mx-auto mt-3 max-w-2xl text-sm text-mist/69">{t("pricing.sub2")}</p>
           </div>
         </AnimateIn>
 
@@ -43,13 +43,13 @@ export function Pricing() {
                 ) : null}
 
                 <p className="font-display text-3xl font-bold text-mist">{plan.name}</p>
-                <p className="mt-2 text-sm text-mist/55">{plan.subtitle}</p>
+                <p className="mt-2 text-sm text-mist/77">{plan.subtitle}</p>
                 <p className="mt-6 font-display text-2xl font-semibold text-lime">{plan.price}</p>
                 <div className="mt-4 h-px w-full bg-white/10" />
 
                 <ul className="mt-6 space-y-3">
                   {plan.features.map((feature) => (
-                    <li key={feature} className="flex items-start gap-2 text-sm text-mist/75">
+                    <li key={feature} className="flex items-start gap-2 text-sm text-mist/89">
                       <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-coral" aria-hidden />
                       {feature}
                     </li>
@@ -59,7 +59,7 @@ export function Pricing() {
                 <Link
                   to="/contact#contact"
                   className={`mt-7 inline-flex w-full items-center justify-center rounded-full px-5 py-3 text-sm font-semibold transition hover:brightness-110 active:scale-95 ${
-                    plan.featured ? "bg-coral text-white" : "bg-white/10 text-mist"
+                    plan.featured ? "bg-coral text-ink" : "bg-white/10 text-mist"
                   }`}
                 >
                   {plan.cta}

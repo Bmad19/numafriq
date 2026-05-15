@@ -27,6 +27,10 @@ const cors     = require('cors');
 const bcrypt   = require('bcryptjs');
 const crypto   = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
+let ImapFlow;
+try { ({ ImapFlow } = require('imapflow')); } catch { ImapFlow = null; }
+let nodemailer;
+try { nodemailer = require('nodemailer'); } catch { nodemailer = null; }
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 const SUPABASE_URL  = process.env.SUPABASE_URL  || '';
@@ -125,7 +129,7 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // 10mb pour autoriser les images base64 (couvertures blog)
 
 // No-cache sur toutes les réponses API
 app.use((_req, res, next) => {
@@ -176,7 +180,7 @@ async function authGuard(req, res, minRole = 'agent') {
 
   const { data: sess, error: sessErr } = await supabase
     .from('sessions')
-    .select('expires_at, user:users!user_id(id,username,full_name,email,role,active,first_login,avatar,password)')
+    .select('expires_at, user:users!user_id(id,username,full_name,email,role,active,first_login,avatar,password,permissions)')
     .eq('token', m[1])
     .maybeSingle();
 
@@ -192,6 +196,46 @@ async function authGuard(req, res, minRole = 'agent') {
   await supabase.from('sessions').update({ expires_at: in8h() }).eq('token', m[1]);
   req.user = sess.user;
   return sess.user;
+}
+
+/** Liste des modules permission-aware (synchronisé avec la sidebar). super_admin a toujours tout. */
+const PERMISSION_KEYS = [
+  'leads', 'assistant', 'projects', 'missions', 'clients', 'chat',
+  'hr', 'accounting', 'feedback', 'job_offers', 'blog',
+  'mailbox',
+];
+function userHasPermission(user, perm) {
+  if (!user) return false;
+  if (user.role === 'super_admin') return true;
+  const raw = String(user.permissions ?? '').trim();
+  if (!raw || raw === '*') return true;
+  const set = new Set(raw.split(/[,;\s]+/).filter(Boolean));
+  if (set.has('*')) return true;
+  return set.has(perm);
+}
+/** Garde permission après authGuard. Renvoie 403 si l'utilisateur n'a pas la perm demandée. */
+function permGuard(req, res, perm) {
+  if (userHasPermission(req.user, perm)) return true;
+  res.status(403).json({ error: `Module « ${perm} » non autorisé pour ce compte.` });
+  return false;
+}
+
+/** Normalise une CSV de permissions (whitelist + dédoublonnage + tri). */
+function normalizePermissions(input) {
+  if (input == null) return null;
+  const str = Array.isArray(input) ? input.join(',') : String(input);
+  const trimmed = str.trim();
+  if (!trimmed || trimmed === '*') return null;
+  const allowed = new Set(PERMISSION_KEYS);
+  const list = Array.from(
+    new Set(
+      trimmed
+        .split(/[,;\s]+/)
+        .map((s) => s.trim().toLowerCase())
+        .filter((s) => s && allowed.has(s))
+    )
+  ).sort();
+  return list.length ? list.join(',') : null;
 }
 
 // Auth guard client
@@ -219,7 +263,7 @@ async function agentTokenGuard(req, res) {
 
   const { data: sess } = await supabase
     .from('sessions')
-    .select('expires_at, user:users!user_id(id,role,active)')
+    .select('expires_at, user:users!user_id(id,role,active,permissions)')
     .eq('token', m[1])
     .gt('expires_at', now())
     .single();
@@ -516,6 +560,7 @@ app.all('/api/bureau/auth.php', async (req, res) => {
           email: user.email,
           role: user.role,
           avatar: user.avatar ?? null,
+          permissions: user.permissions ?? null,
         },
       });
     } catch (e) {
@@ -542,6 +587,7 @@ app.all('/api/bureau/auth.php', async (req, res) => {
       role: u.role,
       avatar: u.avatar,
       first_login: !!u.first_login,
+      permissions: u.permissions ?? null,
     });
   }
 
@@ -582,27 +628,38 @@ app.all('/api/bureau/users.php', async (req, res) => {
   if (action === 'list') {
     const u = await authGuard(req, res, 'admin'); if (!u) return;
     const { data } = await supabase.from('users')
-      .select('id,username,full_name,email,practice_domains,role,avatar,active,created_at,last_login')
+      .select('id,username,full_name,email,practice_domains,permissions,role,avatar,active,created_at,last_login')
       .order('role', { ascending: false }).order('full_name');
     return res.json(data ?? []);
   }
 
   if (action === 'create' && req.method === 'POST') {
     const u = await authGuard(req, res, 'super_admin'); if (!u) return;
-    const { username, full_name, email, role, password, practice_domains } = req.body;
+    const { username, full_name, email, role, password, practice_domains, permissions } = req.body;
     if (!username || !full_name || !password) return res.status(400).json({ error: 'Champs requis manquants' });
     const pd =
       typeof practice_domains === 'string' && practice_domains.trim() !== ''
         ? practice_domains.trim().slice(0, 512).replace(/\s+/g, ' ')
         : null;
-    const { error } = await supabase.from('users').insert({ username, password: bcrypt.hashSync(password, 12), full_name, email: email || null, practice_domains: pd, role: role || 'agent', first_login: true, active: true });
+    const perms = permissions === undefined ? null : normalizePermissions(permissions);
+    const { error } = await supabase.from('users').insert({
+      username,
+      password: bcrypt.hashSync(password, 12),
+      full_name,
+      email: email || null,
+      practice_domains: pd,
+      permissions: perms,
+      role: role || 'agent',
+      first_login: true,
+      active: true,
+    });
     if (error) return res.status(409).json({ error: "Ce nom d'utilisateur existe déjà" });
     return res.json({ success: true });
   }
 
   if (action === 'update' && req.method === 'PUT') {
     const u = await authGuard(req, res, 'super_admin'); if (!u) return;
-    const { username, full_name, email, role, active, practice_domains } = req.body;
+    const { username, full_name, email, role, active, practice_domains, permissions } = req.body;
     const pd =
       typeof practice_domains === 'string'
         ? (practice_domains.trim() === '' ? null : practice_domains.trim().slice(0, 512).replace(/\s+/g, ' '))
@@ -614,6 +671,7 @@ app.all('/api/bureau/users.php', async (req, res) => {
       role,
       active: active ?? true,
       ...(pd !== undefined ? { practice_domains: pd } : {}),
+      ...(permissions !== undefined ? { permissions: normalizePermissions(permissions) } : {}),
     };
     await supabase.from('users').update(row).eq('id', +id);
     return res.json({ success: true });
@@ -642,6 +700,8 @@ app.all('/api/bureau/users.php', async (req, res) => {
 // PROJETS
 // ══════════════════════════════════════════════════════════════════════════════
 app.all('/api/bureau/projects.php', async (req, res) => {
+  if (!(await authGuard(req, res))) return;
+  if (!permGuard(req, res, 'projects')) return;
   const { action, id } = req.query;
 
   if (action === 'list') {
@@ -698,6 +758,8 @@ app.all('/api/bureau/projects.php', async (req, res) => {
 // MISSIONS
 // ══════════════════════════════════════════════════════════════════════════════
 app.all('/api/bureau/missions.php', async (req, res) => {
+  if (!(await authGuard(req, res))) return;
+  if (!permGuard(req, res, 'missions')) return;
   const { action, id } = req.query;
 
   if (action === 'list') {
@@ -741,6 +803,8 @@ app.all('/api/bureau/missions.php', async (req, res) => {
 // RH
 // ══════════════════════════════════════════════════════════════════════════════
 app.all('/api/bureau/hr.php', async (req, res) => {
+  if (!(await authGuard(req, res))) return;
+  if (!permGuard(req, res, 'hr')) return;
   const { action, id } = req.query;
 
   if (action === 'list') {
@@ -786,6 +850,8 @@ app.all('/api/bureau/hr.php', async (req, res) => {
 // COMPTABILITÉ
 // ══════════════════════════════════════════════════════════════════════════════
 app.all('/api/bureau/accounting.php', async (req, res) => {
+  if (!(await authGuard(req, res))) return;
+  if (!permGuard(req, res, 'accounting')) return;
   const { action, id } = req.query;
 
   if (action === 'list') {
@@ -835,6 +901,8 @@ app.all('/api/bureau/accounting.php', async (req, res) => {
 // CHAT INTERNE
 // ══════════════════════════════════════════════════════════════════════════════
 app.all('/api/bureau/messages.php', async (req, res) => {
+  if (!(await authGuard(req, res))) return;
+  if (!permGuard(req, res, 'chat')) return;
   const { action, since, channel } = req.query;
 
   if (action === 'list') {
@@ -893,6 +961,8 @@ app.all('/api/bureau/messages.php', async (req, res) => {
 // RETOURS CLIENTS (feedback)
 // ══════════════════════════════════════════════════════════════════════════════
 app.all('/api/bureau/feedback.php', async (req, res) => {
+  if (!(await authGuard(req, res))) return;
+  if (!permGuard(req, res, 'feedback')) return;
   const { action, id } = req.query;
 
   if (action === 'list') {
@@ -928,6 +998,8 @@ app.all('/api/bureau/feedback.php', async (req, res) => {
 // DEMANDES / LEADS
 // ══════════════════════════════════════════════════════════════════════════════
 app.all('/api/bureau/leads.php', async (req, res) => {
+  if (!(await authGuard(req, res))) return;
+  if (!permGuard(req, res, 'leads')) return;
   const { action, id } = req.query;
 
   if (action === 'list') {
@@ -1084,6 +1156,7 @@ app.all('/api/client/messages.php', async (req, res) => {
   // Agent — liste les conversations
   if (action === 'conversations') {
     const u = await agentTokenGuard(req, res); if (!u) return;
+    if (!permGuard(req, res, 'clients')) return;
     const { data: cls } = await supabase.from('clients').select('id,name,email,company').eq('active', true);
     const result = await Promise.all((cls ?? []).map(async c => {
       const [{ count: unread }, { data: last }] = await Promise.all([
@@ -1098,6 +1171,7 @@ app.all('/api/client/messages.php', async (req, res) => {
   // Agent — fil d'un client
   if (action === 'thread') {
     const u = await agentTokenGuard(req, res); if (!u) return;
+    if (!permGuard(req, res, 'clients')) return;
     const { data } = await supabase.from('client_messages')
       .select('*, agent:users!sender_id(full_name)').eq('client_id', +client_id).order('created_at');
     await supabase.from('client_messages').update({ is_read: true }).eq('client_id', +client_id).eq('sender_type', 'client').eq('is_read', false);
@@ -1107,6 +1181,7 @@ app.all('/api/client/messages.php', async (req, res) => {
   // Agent — réponse à un client
   if (action === 'agent_reply' && req.method === 'POST') {
     const u = await agentTokenGuard(req, res); if (!u) return;
+    if (!permGuard(req, res, 'clients')) return;
     const { client_id: cid, content } = req.body;
     if (!cid || !content?.trim()) return res.status(400).json({ error: 'Champs requis' });
     await supabase.from('client_messages').insert({ client_id: +cid, sender_type: 'agent', sender_id: u.id, content: content.trim() });
@@ -1175,16 +1250,30 @@ function isEmailish(email) {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim().slice(0, 254));
 }
 
+/** Lit (wp_post_id, bureau_article_id) depuis query/body — exactement un des deux est valide. */
+function pickCommentTarget(src) {
+  const wp = parseInt(String(src?.wp_post_id ?? ''), 10);
+  const ba = parseInt(String(src?.bureau_article_id ?? ''), 10);
+  const wpOk = Number.isFinite(wp) && wp > 0;
+  const baOk = Number.isFinite(ba) && ba > 0;
+  if (wpOk && !baOk) return { kind: 'wp', wp_post_id: wp, bureau_article_id: null, key: `wp:${wp}` };
+  if (!wpOk && baOk) return { kind: 'bureau', wp_post_id: null, bureau_article_id: ba, key: `ba:${ba}` };
+  return null;
+}
+
 app.get('/api/blog/comments', async (req, res) => {
-  const wp = parseInt(String(req.query.wp_post_id ?? ''), 10);
-  if (!Number.isFinite(wp) || wp < 1) return res.status(400).json({ error: 'wp_post_id invalide' });
+  const target = pickCommentTarget(req.query);
+  if (!target) return res.status(400).json({ error: 'wp_post_id OU bureau_article_id requis' });
   try {
-    const { data, error } = await supabase
+    let q = supabase
       .from('afrilex_blog_comments')
       .select('id, author_name, body, created_at')
-      .eq('wp_post_id', wp)
       .order('created_at', { ascending: true })
       .limit(500);
+    q = target.kind === 'wp'
+      ? q.eq('wp_post_id', target.wp_post_id)
+      : q.eq('bureau_article_id', target.bureau_article_id);
+    const { data, error } = await q;
     if (error) {
       console.error('GET /api/blog/comments', error);
       const missing = /(does not exist|schema cache|Could not find the table)/i.test(error.message || '');
@@ -1201,13 +1290,13 @@ app.post('/api/blog/comments', async (req, res) => {
   const ip = req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim()
     || req.socket?.remoteAddress
     || 'unknown';
-  const { wp_post_id, author_name, author_email, body, website } = req.body || {};
+  const { author_name, author_email, body, website } = req.body || {};
   if (website != null && String(website).trim() !== '')
     return res.status(204).send();
 
-  const wp = parseInt(String(wp_post_id), 10);
-  if (!Number.isFinite(wp) || wp < 1) return res.status(400).json({ error: 'Article invalide' });
-  if (!blogCommentRateOk(ip, wp))
+  const target = pickCommentTarget(req.body);
+  if (!target) return res.status(400).json({ error: 'Article invalide' });
+  if (!blogCommentRateOk(ip, target.key))
     return res.status(429).json({ error: 'Trop de commentaires envoyés depuis cette connexion.' });
 
   const name = sanitizeBlogCommentText(author_name, 120);
@@ -1218,9 +1307,17 @@ app.post('/api/blog/comments', async (req, res) => {
   if (!isEmailish(email)) return res.status(400).json({ error: 'Adresse email invalide.' });
   if (text.length < 3) return res.status(400).json({ error: 'Le message est trop court.' });
 
+  const insertPayload = {
+    wp_post_id: target.wp_post_id,
+    bureau_article_id: target.bureau_article_id,
+    author_name: name,
+    author_email: email,
+    body: text,
+  };
+
   const { data, error } = await supabase
     .from('afrilex_blog_comments')
-    .insert({ wp_post_id: wp, author_name: name, author_email: email, body: text })
+    .insert(insertPayload)
     .select('id, author_name, body, created_at')
     .single();
 
@@ -1229,12 +1326,782 @@ app.post('/api/blog/comments', async (req, res) => {
     const missing = /(does not exist|schema cache|Could not find the table)/i.test(error.message || '');
     return res.status(503).json({
       error: missing
-        ? 'Créez la table afrilex_blog_comments dans Supabase (voir scripts/sql/afrilex_blog_comments.sql).'
+        ? 'Créez la table afrilex_blog_comments dans Supabase (voir sql/supabase-setup.sql).'
         : "Impossible d'enregistrer le commentaire.",
     });
   }
   return res.status(201).json({ ok: true, comment: data });
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// JOB OFFERS — CRUD bureau + endpoint public
+// ══════════════════════════════════════════════════════════════════════════════
+function slugify(s) {
+  return String(s ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || `offre-${Date.now()}`;
+}
+
+async function ensureUniqueSlug(table, baseSlug, excludeId) {
+  let slug = baseSlug;
+  let n = 1;
+  while (true) {
+    let q = supabase.from(table).select('id').eq('slug', slug).limit(1);
+    if (excludeId) q = q.neq('id', excludeId);
+    const { data } = await q;
+    if (!data || data.length === 0) return slug;
+    n += 1;
+    slug = `${baseSlug}-${n}`;
+    if (n > 200) return `${baseSlug}-${Date.now()}`;
+  }
+}
+
+function normalizeJobOfferPayload(b) {
+  return {
+    position_key:  typeof b.position_key === 'string' && b.position_key.trim() ? b.position_key.trim().slice(0, 64) : null,
+    title_fr:      String(b.title_fr ?? '').trim().slice(0, 240),
+    title_en:      b.title_en != null ? String(b.title_en).trim().slice(0, 240) || null : null,
+    summary_fr:    String(b.summary_fr ?? '').trim().slice(0, 600),
+    summary_en:    b.summary_en != null ? String(b.summary_en).trim().slice(0, 600) || null : null,
+    meta_fr:       b.meta_fr != null ? String(b.meta_fr).trim().slice(0, 240) || null : null,
+    meta_en:       b.meta_en != null ? String(b.meta_en).trim().slice(0, 240) || null : null,
+    content_fr:    b.content_fr != null ? String(b.content_fr).slice(0, 60000) || null : null,
+    content_en:    b.content_en != null ? String(b.content_en).slice(0, 60000) || null : null,
+    contract_type: b.contract_type ? String(b.contract_type).trim().slice(0, 32) : 'cdd',
+    location:      b.location != null ? String(b.location).trim().slice(0, 160) || null : null,
+    is_new:        b.is_new == null ? true : !!b.is_new,
+    is_published:  !!b.is_published,
+    sort_order:    Number.isFinite(+b.sort_order) ? +b.sort_order : 0,
+  };
+}
+
+app.all('/api/bureau/job_offers.php', async (req, res) => {
+  try {
+    if (!(await authGuard(req, res))) return;
+    if (!permGuard(req, res, 'job_offers')) return;
+    const { action, id } = req.query;
+
+    if (action === 'list' && req.method === 'GET') {
+      const u = await authGuard(req, res); if (!u) return;
+      const { data, error } = await supabase
+        .from('job_offers')
+        .select('*')
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: false });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data ?? []);
+    }
+
+    if (action === 'create' && req.method === 'POST') {
+      const u = await authGuard(req, res, 'admin'); if (!u) return;
+      const payload = normalizeJobOfferPayload(req.body || {});
+      if (!payload.title_fr) return res.status(400).json({ error: 'Le titre (FR) est requis' });
+      if (!payload.summary_fr) return res.status(400).json({ error: 'Le résumé (FR) est requis' });
+      const baseSlug = slugify(req.body?.slug || payload.title_fr);
+      const slug = await ensureUniqueSlug('job_offers', baseSlug);
+      const { data, error } = await supabase
+        .from('job_offers')
+        .insert({ ...payload, slug, created_by: u.id, published_at: payload.is_published ? new Date().toISOString() : null })
+        .select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, offer: data });
+    }
+
+    if (action === 'update' && req.method === 'PUT') {
+      const u = await authGuard(req, res, 'admin'); if (!u) return;
+      const payload = normalizeJobOfferPayload(req.body || {});
+      if (!payload.title_fr) return res.status(400).json({ error: 'Le titre (FR) est requis' });
+      if (!payload.summary_fr) return res.status(400).json({ error: 'Le résumé (FR) est requis' });
+      const offerId = +id;
+      const { data: current } = await supabase.from('job_offers').select('slug, is_published, published_at').eq('id', offerId).maybeSingle();
+      let slug = current?.slug;
+      if (req.body?.slug && slugify(req.body.slug) !== current?.slug) {
+        slug = await ensureUniqueSlug('job_offers', slugify(req.body.slug), offerId);
+      }
+      const newPublishedAt = payload.is_published
+        ? (current?.published_at || new Date().toISOString())
+        : null;
+      const { data, error } = await supabase
+        .from('job_offers')
+        .update({ ...payload, slug, published_at: newPublishedAt })
+        .eq('id', offerId)
+        .select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, offer: data });
+    }
+
+    if (action === 'delete' && req.method === 'DELETE') {
+      const u = await authGuard(req, res, 'admin'); if (!u) return;
+      const { error } = await supabase.from('job_offers').delete().eq('id', +id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    return res.status(404).json({ error: 'Action non trouvée' });
+  } catch (e) {
+    console.error('job_offers.php', e);
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.get('/api/jobs/published', async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('job_offers')
+      .select('id, slug, position_key, title_fr, title_en, summary_fr, summary_en, meta_fr, meta_en, content_fr, content_en, contract_type, location, is_new, sort_order, published_at')
+      .eq('is_published', true)
+      .order('sort_order', { ascending: true })
+      .order('published_at', { ascending: false });
+    if (error) {
+      const missing = /(does not exist|schema cache|Could not find the table)/i.test(error.message || '');
+      return res.status(missing ? 503 : 500).json({ offers: [], error: missing ? 'Table job_offers absente — exécutez sql/supabase-setup.sql.' : error.message });
+    }
+    return res.json({ offers: data ?? [] });
+  } catch (e) {
+    return res.status(500).json({ offers: [], error: String(e?.message || e) });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BLOG ARTICLES — CRUD bureau + image upload (BYTEA) + endpoints publics
+// ══════════════════════════════════════════════════════════════════════════════
+function normalizeBlogArticlePayload(b) {
+  return {
+    title_fr:        String(b.title_fr ?? '').trim().slice(0, 240),
+    title_en:        b.title_en != null ? String(b.title_en).trim().slice(0, 240) || null : null,
+    excerpt_fr:      b.excerpt_fr != null ? String(b.excerpt_fr).trim().slice(0, 600) || null : null,
+    excerpt_en:      b.excerpt_en != null ? String(b.excerpt_en).trim().slice(0, 600) || null : null,
+    content_html_fr: String(b.content_html_fr ?? '').slice(0, 200000),
+    content_html_en: b.content_html_en != null ? String(b.content_html_en).slice(0, 200000) || null : null,
+    cover_image_url: b.cover_image_url != null ? String(b.cover_image_url).trim().slice(0, 600) || null : null,
+    categories:      b.categories != null
+      ? (Array.isArray(b.categories) ? b.categories : String(b.categories).split(','))
+          .map((s) => String(s).trim()).filter(Boolean).slice(0, 10).join(',') || null
+      : null,
+    is_published:    !!b.is_published,
+    author_name:     b.author_name != null ? String(b.author_name).trim().slice(0, 160) || null : null,
+  };
+}
+
+const ALLOWED_IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+app.all('/api/bureau/blog_articles.php', async (req, res) => {
+  try {
+    if (!(await authGuard(req, res))) return;
+    if (!permGuard(req, res, 'blog')) return;
+    const { action, id } = req.query;
+
+    if (action === 'list' && req.method === 'GET') {
+      const u = await authGuard(req, res); if (!u) return;
+      const { data, error } = await supabase
+        .from('blog_articles')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data ?? []);
+    }
+
+    if (action === 'get' && req.method === 'GET') {
+      const u = await authGuard(req, res); if (!u) return;
+      const { data, error } = await supabase
+        .from('blog_articles')
+        .select('*')
+        .eq('id', +id)
+        .maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.status(404).json({ error: 'Article introuvable' });
+      const { data: images } = await supabase
+        .from('blog_article_images')
+        .select('id, filename, mime, size_bytes, created_at')
+        .eq('article_id', +id)
+        .order('created_at', { ascending: false });
+      return res.json({ ...data, images: images ?? [] });
+    }
+
+    if (action === 'create' && req.method === 'POST') {
+      const u = await authGuard(req, res, 'admin'); if (!u) return;
+      const payload = normalizeBlogArticlePayload(req.body || {});
+      if (!payload.title_fr) return res.status(400).json({ error: 'Le titre (FR) est requis' });
+      if (!payload.content_html_fr.trim()) return res.status(400).json({ error: 'Le contenu (FR) est requis' });
+      const baseSlug = slugify(req.body?.slug || payload.title_fr);
+      const slug = await ensureUniqueSlug('blog_articles', baseSlug);
+      if (!payload.author_name) payload.author_name = u.full_name || u.username;
+      const { data, error } = await supabase
+        .from('blog_articles')
+        .insert({ ...payload, slug, created_by: u.id, published_at: payload.is_published ? new Date().toISOString() : null })
+        .select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, article: data });
+    }
+
+    if (action === 'update' && req.method === 'PUT') {
+      const u = await authGuard(req, res, 'admin'); if (!u) return;
+      const payload = normalizeBlogArticlePayload(req.body || {});
+      if (!payload.title_fr) return res.status(400).json({ error: 'Le titre (FR) est requis' });
+      if (!payload.content_html_fr.trim()) return res.status(400).json({ error: 'Le contenu (FR) est requis' });
+      const articleId = +id;
+      const { data: current } = await supabase.from('blog_articles').select('slug, published_at').eq('id', articleId).maybeSingle();
+      let slug = current?.slug;
+      if (req.body?.slug && slugify(req.body.slug) !== current?.slug) {
+        slug = await ensureUniqueSlug('blog_articles', slugify(req.body.slug), articleId);
+      }
+      const newPublishedAt = payload.is_published
+        ? (current?.published_at || new Date().toISOString())
+        : null;
+      const { data, error } = await supabase
+        .from('blog_articles')
+        .update({ ...payload, slug, published_at: newPublishedAt })
+        .eq('id', articleId)
+        .select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, article: data });
+    }
+
+    if (action === 'delete' && req.method === 'DELETE') {
+      const u = await authGuard(req, res, 'admin'); if (!u) return;
+      const { error } = await supabase.from('blog_articles').delete().eq('id', +id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    if (action === 'upload_image' && req.method === 'POST') {
+      const u = await authGuard(req, res, 'admin'); if (!u) return;
+      const articleId = +id;
+      const { filename, mime, data_base64, set_as_cover } = req.body || {};
+      if (!ALLOWED_IMAGE_MIMES.has(String(mime || ''))) return res.status(400).json({ error: 'Type image non supporté (JPEG/PNG/WEBP/GIF).' });
+      if (typeof data_base64 !== 'string' || data_base64.length < 64) return res.status(400).json({ error: 'Image absente ou invalide.' });
+      const cleanB64 = data_base64.replace(/^data:[^,]+,/, '');
+      const buf = Buffer.from(cleanB64, 'base64');
+      if (buf.length === 0) return res.status(400).json({ error: 'Image vide.' });
+      if (buf.length > MAX_IMAGE_BYTES) return res.status(413).json({ error: 'Image trop lourde (max 5 Mo).' });
+      const dataHex = '\\x' + buf.toString('hex');
+      const { data, error } = await supabase
+        .from('blog_article_images')
+        .insert({
+          article_id: articleId || null,
+          filename: filename ? String(filename).slice(0, 240) : null,
+          mime: String(mime),
+          data: dataHex,
+          size_bytes: buf.length,
+        })
+        .select('id, filename, mime, size_bytes, created_at')
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      const url = `/api/blog/images/${data.id}`;
+      if (set_as_cover && articleId) {
+        await supabase.from('blog_articles').update({ cover_image_url: url }).eq('id', articleId);
+      }
+      return res.json({ success: true, image: data, url });
+    }
+
+    if (action === 'delete_image' && req.method === 'DELETE') {
+      const u = await authGuard(req, res, 'admin'); if (!u) return;
+      const imageId = parseInt(String(req.query.image_id), 10);
+      if (!Number.isFinite(imageId)) return res.status(400).json({ error: 'image_id requis' });
+      const { error } = await supabase.from('blog_article_images').delete().eq('id', imageId);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    return res.status(404).json({ error: 'Action non trouvée' });
+  } catch (e) {
+    console.error('blog_articles.php', e);
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+const BLOG_ARTICLE_PUBLIC_COLUMNS =
+  'id, slug, title_fr, title_en, excerpt_fr, excerpt_en, content_html_fr, content_html_en, cover_image_url, categories, author_name, published_at, created_at';
+
+app.get('/api/blog/articles', async (_req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('blog_articles')
+      .select('id, slug, title_fr, title_en, excerpt_fr, excerpt_en, cover_image_url, categories, author_name, published_at, created_at')
+      .eq('is_published', true)
+      .order('published_at', { ascending: false });
+    if (error) {
+      const missing = /(does not exist|schema cache|Could not find the table)/i.test(error.message || '');
+      return res.status(missing ? 503 : 500).json({ articles: [], error: missing ? 'Table blog_articles absente — exécutez sql/supabase-setup.sql.' : error.message });
+    }
+    return res.json({ articles: data ?? [] });
+  } catch (e) {
+    return res.status(500).json({ articles: [], error: String(e?.message || e) });
+  }
+});
+
+app.get('/api/blog/articles/:slug', async (req, res) => {
+  const slug = String(req.params.slug || '').trim();
+  if (!slug) return res.status(400).json({ error: 'slug requis' });
+  try {
+    const { data, error } = await supabase
+      .from('blog_articles')
+      .select(BLOG_ARTICLE_PUBLIC_COLUMNS)
+      .eq('slug', slug)
+      .eq('is_published', true)
+      .maybeSingle();
+    if (error) {
+      const missing = /(does not exist|schema cache|Could not find the table)/i.test(error.message || '');
+      return res.status(missing ? 503 : 500).json({ error: missing ? 'Table blog_articles absente.' : error.message });
+    }
+    if (!data) return res.status(404).json({ error: 'Article introuvable' });
+    return res.json({ article: data });
+  } catch (e) {
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+app.get('/api/blog/images/:id', async (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id) || id < 1) return res.status(400).send('id invalide');
+  try {
+    const { data, error } = await supabase
+      .from('blog_article_images')
+      .select('mime, data, size_bytes')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) return res.status(500).send(error.message);
+    if (!data) return res.status(404).send('Image introuvable');
+    let buf;
+    if (typeof data.data === 'string' && data.data.startsWith('\\x')) {
+      buf = Buffer.from(data.data.slice(2), 'hex');
+    } else if (typeof data.data === 'string') {
+      buf = Buffer.from(data.data, 'base64');
+    } else if (Buffer.isBuffer(data.data)) {
+      buf = data.data;
+    } else {
+      return res.status(500).send('Format image inconnu');
+    }
+    res.set({
+      'Content-Type': data.mime || 'application/octet-stream',
+      'Content-Length': String(buf.length),
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    });
+    return res.end(buf);
+  } catch (e) {
+    return res.status(500).send(String(e?.message || e));
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MAILBOX LWS — comptes mail (super_admin) + lecture IMAP via imapflow
+// Mots de passe IMAP chiffrés AES-256-GCM avec MAILBOX_ENCRYPTION_KEY (.env.local).
+// ══════════════════════════════════════════════════════════════════════════════
+function mailboxKey() {
+  const raw = (process.env.MAILBOX_ENCRYPTION_KEY || '').trim();
+  if (raw) {
+    // Hex (64 caractères) → 32 bytes ; sinon dérive un SHA-256 sur la chaîne.
+    const buf = /^[0-9a-f]{64}$/i.test(raw) ? Buffer.from(raw, 'hex') : crypto.createHash('sha256').update(raw).digest();
+    return buf;
+  }
+  // Fallback : dérive depuis la service_role_key (recoverable depuis le serveur, pas optimal mais fonctionnel).
+  return crypto.createHash('sha256').update('afrilex-mailbox|' + (process.env.SUPABASE_SERVICE_ROLE_KEY || '')).digest();
+}
+
+function encryptSecret(plain) {
+  if (typeof plain !== 'string' || !plain) throw new Error('Mot de passe vide');
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', mailboxKey(), iv);
+  const enc = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `${iv.toString('base64')}:${tag.toString('base64')}:${enc.toString('base64')}`;
+}
+
+function decryptSecret(blob) {
+  if (typeof blob !== 'string' || !blob.includes(':')) throw new Error('Format chiffré invalide');
+  const [ivB64, tagB64, encB64] = blob.split(':');
+  const iv = Buffer.from(ivB64, 'base64');
+  const tag = Buffer.from(tagB64, 'base64');
+  const enc = Buffer.from(encB64, 'base64');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', mailboxKey(), iv);
+  decipher.setAuthTag(tag);
+  return Buffer.concat([decipher.update(enc), decipher.final()]).toString('utf8');
+}
+
+const MAILBOX_PUBLIC_COLUMNS =
+  'id, label, email, imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure, active, created_at, updated_at';
+
+function inferImapDefaults(email) {
+  const domain = String(email || '').split('@')[1] || '';
+  // LWS standard : mail.lws-hosting.com (pour les domaines hébergés chez LWS).
+  // Adapter au besoin via le formulaire.
+  return {
+    imap_host: domain ? `mail.${domain}` : 'mail.lws-hosting.com',
+    imap_port: 993,
+    imap_secure: true,
+    smtp_host: domain ? `mail.${domain}` : 'mail.lws-hosting.com',
+    smtp_port: 465,
+    smtp_secure: true,
+  };
+}
+
+async function loadMailboxAccount(id, includeSecret = false) {
+  const cols = includeSecret
+    ? `${MAILBOX_PUBLIC_COLUMNS}, password_enc`
+    : MAILBOX_PUBLIC_COLUMNS;
+  const { data, error } = await supabase.from('mailbox_accounts').select(cols).eq('id', id).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+/** Ouvre une connexion IMAP, exécute fn(client), ferme proprement (logout best-effort). */
+async function withImapClient(account, fn, { timeoutMs = 25000 } = {}) {
+  if (!ImapFlow) throw new Error('Module imapflow absent — npm install imapflow');
+  const client = new ImapFlow({
+    host: account.imap_host,
+    port: account.imap_port,
+    secure: !!account.imap_secure,
+    auth: { user: account.email, pass: decryptSecret(account.password_enc) },
+    logger: false,
+    socketTimeout: timeoutMs,
+    greetingTimeout: 10000,
+  });
+  try {
+    await client.connect();
+    const r = await fn(client);
+    return r;
+  } finally {
+    try { await client.logout(); } catch { /* ignore */ }
+  }
+}
+
+app.all('/api/bureau/mailbox.php', async (req, res) => {
+  try {
+    const { action, id } = req.query;
+    const u = await authGuard(req, res, 'super_admin'); if (!u) return;
+    if (!permGuard(req, res, 'mailbox')) return;
+
+    if (action === 'accounts' && req.method === 'GET') {
+      const { data, error } = await supabase
+        .from('mailbox_accounts')
+        .select(MAILBOX_PUBLIC_COLUMNS)
+        .order('label', { ascending: true });
+      if (error) {
+        const missing = /(does not exist|schema cache|Could not find the table)/i.test(error.message || '');
+        return res.status(missing ? 503 : 500).json({
+          error: missing ? 'Table mailbox_accounts absente — exécutez sql/supabase_perms_mailbox_addon.sql.' : error.message,
+        });
+      }
+      return res.json({ accounts: data ?? [] });
+    }
+
+    if (action === 'add_account' && req.method === 'POST') {
+      const { label, email, password, imap_host, imap_port, imap_secure, smtp_host, smtp_port, smtp_secure } = req.body || {};
+      if (!label || !email || !password) return res.status(400).json({ error: 'label, email, password requis.' });
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email))) return res.status(400).json({ error: 'Email invalide.' });
+      const defaults = inferImapDefaults(email);
+      const payload = {
+        label: String(label).trim().slice(0, 160),
+        email: String(email).trim().toLowerCase().slice(0, 254),
+        imap_host: imap_host ? String(imap_host).trim().slice(0, 240) : defaults.imap_host,
+        imap_port: Number.isFinite(+imap_port) ? +imap_port : defaults.imap_port,
+        imap_secure: imap_secure == null ? true : !!imap_secure,
+        smtp_host: smtp_host ? String(smtp_host).trim().slice(0, 240) : defaults.smtp_host,
+        smtp_port: Number.isFinite(+smtp_port) ? +smtp_port : defaults.smtp_port,
+        smtp_secure: smtp_secure == null ? true : !!smtp_secure,
+        password_enc: encryptSecret(String(password)),
+        active: true,
+        created_by: u.id,
+      };
+      const { data, error } = await supabase.from('mailbox_accounts').insert(payload).select(MAILBOX_PUBLIC_COLUMNS).single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, account: data });
+    }
+
+    if (action === 'update_account' && req.method === 'PUT') {
+      const accountId = +id;
+      const body = req.body || {};
+      const update = {};
+      if (typeof body.label === 'string')       update.label       = body.label.trim().slice(0, 160);
+      if (typeof body.email === 'string')       update.email       = body.email.trim().toLowerCase().slice(0, 254);
+      if (typeof body.imap_host === 'string')   update.imap_host   = body.imap_host.trim().slice(0, 240);
+      if (Number.isFinite(+body.imap_port))     update.imap_port   = +body.imap_port;
+      if (body.imap_secure != null)             update.imap_secure = !!body.imap_secure;
+      if (typeof body.smtp_host === 'string')   update.smtp_host   = body.smtp_host.trim().slice(0, 240) || null;
+      if (Number.isFinite(+body.smtp_port))     update.smtp_port   = +body.smtp_port;
+      if (body.smtp_secure != null)             update.smtp_secure = !!body.smtp_secure;
+      if (body.active != null)                  update.active      = !!body.active;
+      if (typeof body.password === 'string' && body.password.trim() !== '')
+        update.password_enc = encryptSecret(body.password);
+      const { data, error } = await supabase.from('mailbox_accounts').update(update).eq('id', accountId).select(MAILBOX_PUBLIC_COLUMNS).single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, account: data });
+    }
+
+    if (action === 'delete_account' && req.method === 'DELETE') {
+      const accountId = +id;
+      const { error } = await supabase.from('mailbox_accounts').delete().eq('id', accountId);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    if (action === 'test_connection' && req.method === 'POST') {
+      const accountId = +id;
+      const account = await loadMailboxAccount(accountId, true);
+      if (!account) return res.status(404).json({ error: 'Compte introuvable' });
+      try {
+        const r = await withImapClient(account, async (client) => {
+          const lock = await client.getMailboxLock('INBOX');
+          try {
+            const status = await client.status('INBOX', { messages: true, unseen: true });
+            return { messages: status.messages ?? 0, unseen: status.unseen ?? 0 };
+          } finally {
+            lock.release();
+          }
+        });
+        return res.json({ success: true, ...r });
+      } catch (e) {
+        return res.status(502).json({ success: false, error: String(e?.message || e) });
+      }
+    }
+
+    if (action === 'inbox' && req.method === 'GET') {
+      const accountId = +id;
+      const account = await loadMailboxAccount(accountId, true);
+      if (!account) return res.status(404).json({ error: 'Compte introuvable' });
+      const limit = Math.min(parseInt(String(req.query.limit ?? '50'), 10) || 50, 200);
+      const folder = (req.query.folder && String(req.query.folder).trim()) || 'INBOX';
+      try {
+        const messages = await withImapClient(account, async (client) => {
+          const lock = await client.getMailboxLock(folder);
+          try {
+            const status = await client.status(folder, { messages: true, unseen: true });
+            const total = status.messages ?? 0;
+            if (total === 0) return { folder, total: 0, unseen: 0, messages: [] };
+            const start = Math.max(1, total - limit + 1);
+            const range = `${start}:${total}`;
+            const list = [];
+            for await (const m of client.fetch(range, { uid: true, envelope: true, internalDate: true, flags: true, size: true })) {
+              const env = m.envelope || {};
+              const fromAddr = (env.from && env.from[0]) || {};
+              const toAddrs = Array.isArray(env.to) ? env.to.map((a) => `${a.name ?? ''} <${a.address ?? ''}>`.trim()).join(', ') : '';
+              list.push({
+                uid: m.uid,
+                seq: m.seq,
+                date: env.date || m.internalDate || null,
+                subject: env.subject || '(sans objet)',
+                from_name: fromAddr.name || '',
+                from_address: fromAddr.address || '',
+                to: toAddrs,
+                size: m.size ?? 0,
+                seen: Array.isArray(m.flags) ? m.flags.includes('\\Seen') : (m.flags && m.flags.has ? m.flags.has('\\Seen') : false),
+                flagged: Array.isArray(m.flags) ? m.flags.includes('\\Flagged') : false,
+              });
+            }
+            list.sort((a, b) => (a.date < b.date ? 1 : -1));
+            return { folder, total, unseen: status.unseen ?? 0, messages: list };
+          } finally {
+            lock.release();
+          }
+        }, { timeoutMs: 30000 });
+        return res.json(messages);
+      } catch (e) {
+        return res.status(502).json({ error: String(e?.message || e) });
+      }
+    }
+
+    if (action === 'send' && req.method === 'POST') {
+      if (!nodemailer) return res.status(503).json({ error: 'Module nodemailer absent — npm install nodemailer.' });
+      const accountId = +id;
+      const account = await loadMailboxAccount(accountId, true);
+      if (!account) return res.status(404).json({ error: 'Compte introuvable' });
+      const { to, cc, bcc, subject, text, html, in_reply_to } = req.body || {};
+      const toList   = sanitizeRecipientList(to);
+      const ccList   = sanitizeRecipientList(cc);
+      const bccList  = sanitizeRecipientList(bcc);
+      if (toList.length === 0) return res.status(400).json({ error: 'Au moins un destinataire (To) est requis.' });
+      const subjStr = String(subject ?? '').trim().slice(0, 998);
+      const textStr = typeof text === 'string' ? text : '';
+      const htmlStr = typeof html === 'string' ? html : '';
+      if (!textStr.trim() && !htmlStr.trim()) return res.status(400).json({ error: 'Corps du message vide.' });
+
+      const smtpHost = account.smtp_host || account.imap_host;
+      const smtpPort = account.smtp_port ?? 465;
+      const smtpSecure = account.smtp_secure ?? true;
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: !!smtpSecure,
+        auth: { user: account.email, pass: decryptSecret(account.password_enc) },
+        connectionTimeout: 25000,
+        greetingTimeout: 15000,
+      });
+
+      try {
+        const info = await transporter.sendMail({
+          from: { name: account.label || account.email, address: account.email },
+          to: toList,
+          cc: ccList.length ? ccList : undefined,
+          bcc: bccList.length ? bccList : undefined,
+          subject: subjStr || '(sans objet)',
+          text: textStr || undefined,
+          html: htmlStr || undefined,
+          inReplyTo: in_reply_to || undefined,
+          references: in_reply_to ? [in_reply_to] : undefined,
+        });
+        // Best-effort : copie dans le dossier "Sent" via IMAP APPEND.
+        try {
+          await withImapClient(account, async (client) => {
+            const sentBoxes = ['Sent', 'INBOX.Sent', 'Sent Items', 'Sent Messages', 'Envoy\u00e9s', 'INBOX.Envoy\u00e9s'];
+            let target = null;
+            for (const name of sentBoxes) {
+              try {
+                const exists = await client.mailboxOpen(name).catch(() => null);
+                if (exists) { target = name; await client.mailboxClose(); break; }
+              } catch { /* try next */ }
+            }
+            if (!target) return;
+            // Reconstruit un email RFC822 simple (nodemailer renvoie raw via streamTransport, mais on l'a pas activé)
+            // → Append minimal : utilise info.message si disponible (pas le cas sans streamTransport).
+            // On skip si info.message absent — pas critique.
+            const raw = info.message || null;
+            if (raw) await client.append(target, raw, ['\\Seen']);
+          }, { timeoutMs: 20000 });
+        } catch (appendErr) {
+          console.warn('Sent folder append skipped:', appendErr?.message);
+        }
+        try { transporter.close(); } catch { /* ignore */ }
+        return res.json({
+          success: true,
+          messageId: info.messageId,
+          accepted: info.accepted,
+          rejected: info.rejected,
+        });
+      } catch (e) {
+        try { transporter.close(); } catch { /* ignore */ }
+        return res.status(502).json({ success: false, error: String(e?.message || e) });
+      }
+    }
+
+    if (action === 'message' && req.method === 'GET') {
+      const accountId = +id;
+      const uid = parseInt(String(req.query.uid ?? ''), 10);
+      if (!Number.isFinite(uid)) return res.status(400).json({ error: 'uid requis' });
+      const account = await loadMailboxAccount(accountId, true);
+      if (!account) return res.status(404).json({ error: 'Compte introuvable' });
+      const folder = (req.query.folder && String(req.query.folder).trim()) || 'INBOX';
+      try {
+        const msg = await withImapClient(account, async (client) => {
+          const lock = await client.getMailboxLock(folder);
+          try {
+            const m = await client.fetchOne(String(uid), { uid: true, envelope: true, source: true, internalDate: true, flags: true, size: true }, { uid: true });
+            if (!m) return null;
+            const env = m.envelope || {};
+            const fromAddr = (env.from && env.from[0]) || {};
+            // Parse minimaliste : extraire text/plain et text/html depuis source brute.
+            const sourceStr = m.source ? m.source.toString('utf8') : '';
+            const { text, html } = quickParseMime(sourceStr);
+            return {
+              uid: m.uid,
+              message_id: env.messageId || null,
+              date: env.date || m.internalDate || null,
+              subject: env.subject || '(sans objet)',
+              from_name: fromAddr.name || '',
+              from_address: fromAddr.address || '',
+              to: Array.isArray(env.to) ? env.to.map((a) => `${a.name ?? ''} <${a.address ?? ''}>`.trim()).join(', ') : '',
+              to_addresses: Array.isArray(env.to) ? env.to.map((a) => a.address).filter(Boolean) : [],
+              cc: Array.isArray(env.cc) ? env.cc.map((a) => `${a.name ?? ''} <${a.address ?? ''}>`.trim()).join(', ') : '',
+              cc_addresses: Array.isArray(env.cc) ? env.cc.map((a) => a.address).filter(Boolean) : [],
+              size: m.size ?? 0,
+              text,
+              html,
+            };
+          } finally {
+            lock.release();
+          }
+        });
+        if (!msg) return res.status(404).json({ error: 'Message introuvable' });
+        return res.json(msg);
+      } catch (e) {
+        return res.status(502).json({ error: String(e?.message || e) });
+      }
+    }
+
+    return res.status(404).json({ error: 'Action non trouvée' });
+  } catch (e) {
+    console.error('mailbox.php', e);
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+/**
+ * Normalise une liste de destinataires : accepte tableau ou CSV/saut-de-ligne, valide format email basique.
+ * Retire les doublons et limite à 50 destinataires par champ.
+ */
+function sanitizeRecipientList(input) {
+  if (input == null) return [];
+  const raw = Array.isArray(input) ? input.join(',') : String(input);
+  const seen = new Set();
+  const out = [];
+  for (const part of raw.split(/[\s,;]+/)) {
+    const t = part.trim().replace(/^[<\s]+|[>\s]+$/g, '');
+    if (!t || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t)) continue;
+    const key = t.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+    if (out.length >= 50) break;
+  }
+  return out;
+}
+
+/**
+ * Parse MIME ultra-léger : extrait text/plain et text/html du brut RFC 822.
+ * Suffisant pour 90 % des emails LWS courants ; pour parsing complet (pièces jointes, encodings exotiques),
+ * on remplacera par mailparser plus tard.
+ */
+function quickParseMime(source) {
+  if (!source) return { text: '', html: '' };
+  const headerEnd = source.indexOf('\r\n\r\n');
+  const headers = headerEnd === -1 ? source : source.slice(0, headerEnd);
+  const body = headerEnd === -1 ? '' : source.slice(headerEnd + 4);
+  const ctMatch = /^content-type:\s*([^;\r\n]+)(?:;\s*boundary="?([^";\r\n]+)"?)?/im.exec(headers);
+  const cteMatch = /^content-transfer-encoding:\s*([^\r\n]+)/im.exec(headers);
+  const cte = (cteMatch?.[1] || '7bit').toLowerCase().trim();
+  const ct = (ctMatch?.[1] || 'text/plain').toLowerCase().trim();
+  const boundary = ctMatch?.[2];
+
+  function decode(part, encoding) {
+    if (encoding === 'base64') {
+      try { return Buffer.from(part.replace(/\s+/g, ''), 'base64').toString('utf8'); } catch { return part; }
+    }
+    if (encoding === 'quoted-printable') {
+      try {
+        return part
+          .replace(/=\r?\n/g, '')
+          .replace(/=([0-9A-Fa-f]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+      } catch { return part; }
+    }
+    return part;
+  }
+
+  if (!boundary) {
+    if (ct.startsWith('text/html'))  return { text: '', html: decode(body, cte) };
+    return { text: decode(body, cte), html: '' };
+  }
+
+  const sep = `--${boundary}`;
+  const parts = body.split(sep).slice(1, -1);
+  let text = '';
+  let html = '';
+  for (const raw of parts) {
+    const rPart = raw.replace(/^\r?\n/, '');
+    const pHeaderEnd = rPart.indexOf('\r\n\r\n');
+    if (pHeaderEnd === -1) continue;
+    const pHeaders = rPart.slice(0, pHeaderEnd);
+    const pBody = rPart.slice(pHeaderEnd + 4);
+    const pCt = (/^content-type:\s*([^;\r\n]+)/im.exec(pHeaders)?.[1] || '').toLowerCase().trim();
+    const pCte = (/^content-transfer-encoding:\s*([^\r\n]+)/im.exec(pHeaders)?.[1] || '7bit').toLowerCase().trim();
+    if (pCt.startsWith('text/plain') && !text) text = decode(pBody, pCte);
+    else if (pCt.startsWith('text/html') && !html) html = decode(pBody, pCte);
+  }
+  return { text, html };
+}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CHAT IA — Proxy Groq
@@ -1285,6 +2152,7 @@ Si la personne veut être rappelée ou mandater le cabinet, demande NOM et TÉL�
 // ══════════════════════════════════════════════════════════════════════════════
 app.post('/api/bureau/assistant.php', async (req, res) => {
   const u = await authGuard(req, res); if (!u) return;
+  if (!permGuard(req, res, 'assistant')) return;
   if (!GROQ_KEY) {
     return res.status(503).json({
       error: 'Clé Groq absente — définissez GROQ_API_KEY dans .env.local (même variable que chat public).',

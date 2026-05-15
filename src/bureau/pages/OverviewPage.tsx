@@ -45,7 +45,7 @@ export function OverviewPage() {
     <div className="space-y-8">
       <div>
         <h1 className="font-display text-2xl font-bold text-white">Vue d'ensemble</h1>
-        <p className="mt-1 text-sm text-white/40">Bonjour ! Voici l'état du bureau NUMAFRIQ.</p>
+        <p className="mt-1 text-sm text-white/40">Bonjour ! Voici l'état du bureau Afrilex Conseil.</p>
       </div>
 
       {/* KPIs */}
@@ -122,7 +122,7 @@ export function OverviewPage() {
                       <span className="h-1.5 w-1.5 rounded-full bg-lime animate-pulse" />Nouveau
                     </span>
                   )}
-                  <span className="text-xs text-white/25">{timeAgo(lead.created_at)}</span>
+                  <span className="text-xs text-white/48">{timeAgo(lead.created_at)}</span>
                 </div>
               </motion.div>
             ))}
@@ -138,7 +138,7 @@ export function OverviewPage() {
       <div className="grid gap-4 sm:grid-cols-3">
         {[
           { label: "Projets terminés",  value: stats?.termine ?? "–",  color: "text-violet", icon: "✓", to: "/bureau/projets" },
-          { label: "En pause",          value: stats?.en_pause ?? "–",  color: "text-orange-400", icon: "⏸", to: "/bureau/projets" },
+          { label: "En pause",          value: stats?.en_pause ?? "–",  color: "text-violet", icon: "⏸", to: "/bureau/projets" },
           { label: "Total demandes",    value: leadStats?.total ?? "–", color: "text-white",  icon: "📋", to: "/bureau/leads" },
         ].map((s, i) => (
           <motion.div key={s.label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 + i * 0.07 }}>

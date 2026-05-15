@@ -1,0 +1,16 @@
+---
+description: Régénérer dist/ après toute modification du code Afrilex
+alwaysApply: true
+---
+
+# Build production après modifications
+
+Lorsque des fichiers du site sont modifiés (`src/`, `public/`, `index.html`, `tailwind.config.js`, `vite.config.ts`, etc.), terminer la tâche en exécutant à la racine du projet :
+
+```bash
+npm run build
+```
+
+Cela met à jour le dossier `dist/` pour le déploiement. Si la commande échoue (variables d’environnement manquantes), corriger ou signaler le blocage.
+
+Pour garder `dist/` à jour en continu pendant le travail local : `npm run build:watch` (rebuild incrémental à chaque sauvegarde, sans relancer la vérif `.env` à chaque fois).

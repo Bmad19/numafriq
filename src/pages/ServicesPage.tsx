@@ -11,7 +11,7 @@ export function ServicesPage() {
 
   return (
     <>
-      <Seo title={t("nav.services")} description="NUMAFRIQ — Services digitaux complets pour votre croissance." />
+      <Seo title={t("nav.services")} description={t("services.seoDescription")} />
       <HeroSlider slides={slides} />
       <div className="px-4 pb-24 sm:px-6 lg:px-8">
         <Services />

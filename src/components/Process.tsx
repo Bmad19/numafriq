@@ -25,10 +25,10 @@ export function Process() {
               <h2 className="mt-3 font-display text-3xl font-bold text-mist sm:text-4xl text-balance">
                 {t("process.title")}
               </h2>
-              <p className="mt-4 text-mist/55 leading-relaxed">{t("process.sub")}</p>
+              <p className="mt-4 text-mist/77 leading-relaxed">{t("process.sub")}</p>
               <Link
                 to="/contact#contact"
-                className="mt-8 inline-flex items-center gap-2 rounded-full bg-coral px-6 py-3 text-sm font-semibold text-white transition hover:brightness-110 active:scale-95"
+                className="btn-afrilex-primary mt-8 gap-2 px-6 py-3 text-sm"
               >
                 {t("process.cta")}
               </Link>
@@ -49,7 +49,7 @@ export function Process() {
                   </div>
                   <div>
                     <h3 className="font-display text-lg font-bold text-mist">{s.title}</h3>
-                    <p className="mt-1.5 text-sm text-mist/55 leading-relaxed">{s.desc}</p>
+                    <p className="mt-1.5 text-sm text-mist/77 leading-relaxed">{s.desc}</p>
                   </div>
                 </li>
               </AnimateIn>

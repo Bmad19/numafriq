@@ -1,0 +1,20 @@
+216:    plans: [
+217:      {
+218:        name: "The contract",
+219:        subtitle: "Without a contract, no safe business",
+220:        price: "Item",
+221:        features: [
+222:          "Why this document can save (or sink) your business."
+223:          "Trust and sustainable legal framework in business in Africa.",
+224:        ],
+225:        cta: "Read the article",
+226:        href: "https://afrilexconseil.com/le-contrat/",
+227:      },
+228:      {
+229:        name: "Compliance & policy",
+230:        subtitle: "Compliance as a lever for businesses",
+231:        price: "Item",
+232:        features: [
+233:          "In the minds of many leaders, compliance remains associated with a restrictive reality.",
+234:          "Why it can become a strategic lever rather than a brake.",
+235:        ],

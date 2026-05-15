@@ -1,3 +1,5 @@
+import typography from "@tailwindcss/typography";
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
@@ -8,21 +10,30 @@ export default {
         display: ['"Syne"', "system-ui", "sans-serif"],
       },
       colors: {
-        ink: "#0a0a0c",
-        mist: "#f4f2ef",
-        coral: "#e61f2f",
-        lime: "#2aa8ff",
-        violet: "#0f5ed9",
+        /* Fond & texte — ton relevant pour ambiante plus lumineuse (contraste titré corps conservé). */
+        ink: "#263a34",
+        mist: "#fffefb",
+        /*
+         * Thème or + blanc : coral = or plus franc ; lime/violet = panneaux plus vifs.
+         */
+        coral: "#ecc85a",
+        lime: "#faf6ee",
+        violet: "#f2ebe2",
       },
       backgroundImage: {
         "grid-pattern":
-          "linear-gradient(to right, rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.03) 1px, transparent 1px)",
+          "linear-gradient(to right, rgba(236,200,90,0.15) 1px, transparent 1px), linear-gradient(to bottom, rgba(250,246,238,0.13) 1px, transparent 1px)",
         "glow-conic":
-          "conic-gradient(from 180deg at 50% 50%, #e61f2f 0deg, #0f5ed9 120deg, #2aa8ff 240deg, #e61f2f 360deg)",
+          "conic-gradient(from 200deg at 50% 45%, #f0d878 0deg, #fffef9 100deg, #d4b84a 220deg, #faf6ee 300deg, #ecc85a 360deg)",
+      },
+      boxShadow: {
+        brand: "0 18px 50px -20px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(255,255,255,0.1)",
       },
       animation: {
         float: "float 6s ease-in-out infinite",
         "fade-up": "fadeUp 0.8s ease-out forwards",
+        "pole-glow": "poleGlow 5s ease-in-out infinite alternate",
+        "pole-shine": "poleShine 3.5s ease-in-out infinite",
       },
       keyframes: {
         float: {
@@ -33,8 +44,16 @@ export default {
           from: { opacity: "0", transform: "translateY(24px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        poleGlow: {
+          "0%": { opacity: "0.42", transform: "scale(1)" },
+          "100%": { opacity: "0.64", transform: "scale(1.12)" },
+        },
+        poleShine: {
+          "0%, 100%": { opacity: "0.15", transform: "translateX(-40%) skewX(-12deg)" },
+          "50%": { opacity: "0.35", transform: "translateX(40%) skewX(-12deg)" },
+        },
       },
     },
   },
-  plugins: [],
+  plugins: [typography],
 };

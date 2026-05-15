@@ -21,3 +21,9 @@ npm-debug.log*
 # Vite
 *.local
 .vite/
+
+# Généré au build (articles WordPress pour déploiement statique)
+public/blog-feed.json
+
+api/uploads/cvs/*
+!api/uploads/cvs/.gitkeep

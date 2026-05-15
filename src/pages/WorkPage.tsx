@@ -11,7 +11,7 @@ export function WorkPage() {
 
   return (
     <>
-      <Seo title={t("nav.realisations")} description="NUMAFRIQ — Réalisations digitales concrètes et mesurables." />
+      <Seo title={t("nav.realisations")} description={t("work.seoDescription")} />
       <HeroSlider slides={slides} />
       <div className="px-4 pb-24 sm:px-6 lg:px-8">
         <Work />

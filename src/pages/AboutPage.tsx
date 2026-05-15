@@ -10,7 +10,7 @@ export function AboutPage() {
 
   return (
     <>
-      <Seo title={t("nav.apropos")} description="NUMAFRIQ — Agence web africaine, clarté stratégique et standards internationaux." />
+      <Seo title={t("nav.apropos")} description="Afrilex Conseil — Organisation institutionnelle, mission et valeurs du cabinet." />
       <HeroSlider slides={slides} />
       <div className="px-4 pb-24 sm:px-6 lg:px-8">
         <About />

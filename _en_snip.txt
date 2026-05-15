@@ -1,0 +1,26 @@
+153:    },
+154:    stats: [
+155:      { n: "6", l: "strategic poles" },
+156:      { n: "9+", l: "action values" },
+157:      { n: "OHADA", l: "& business law" },
+158:    ],
+159:    parallaxAlt:
+160:      "African professional at work with a computer — illustration of the firm's regional positioning.",
+161:    parallaxEyebrow: "West Africa anchor",
+162:    parallax Caption:
+163:      "A local presence and teams attentive to the markets you target.",
+164:  },
+165:
+166:  // ── Integrated blog (WordPress feed + SPA comments) ─────────────────────
+167:  blog: {
+168:    brand: "Afrilex Conseil",
+169:    seoDescription:
+170:      "Legal publications, OHADA and compliance — Afrilex Conseil, Ouagadougou.",
+171:    heroEyebrow: "Publications",
+172:    heroTitle: "Afrilex Conseil Blog",
+173:    heroDescription:
+174:      "Articles synchronized from afrilexconseil.com, read here; you can react in comments under each publication.",
+175:    sourceDisclaimer:
+176:      "Contents and visuals from the official website afrilexconseil.com (editorial source of the firm)",
+177:    sourceFooter:
+178:      "Text also published on WordPress; the link "Open on afrilexconseil.com" refers to the source page.",

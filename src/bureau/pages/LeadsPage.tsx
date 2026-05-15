@@ -7,7 +7,8 @@ const STATUS_CFG: Record<string, { label: string; color: string; dot: string }> 
   nouveau:  { label: "Nouveau",   color: "text-lime   bg-lime/10   border-lime/25",   dot: "bg-lime animate-pulse" },
   en_cours: { label: "En cours",  color: "text-coral  bg-coral/10  border-coral/25",  dot: "bg-coral" },
   converti: { label: "Converti",  color: "text-violet bg-violet/10 border-violet/25", dot: "bg-violet" },
-  perdu:    { label: "Perdu",     color: "text-white/30 bg-white/5 border-white/10",  dot: "bg-white/20" },
+  perdu:    { label: "Perdu",     color: "text-white/55 bg-white/5 border-white/10",  dot: "bg-white/20" },
+  archive:  { label: "Archivé",   color: "text-white/48 bg-white/[0.03] border-white/10", dot: "bg-white/10" },
 };
 
 const SERVICE_ICONS: Record<string, string> = {
@@ -78,10 +79,12 @@ export function LeadsPage() {
 
   const filtered = leads.filter(l => filter === "all" || l.status === filter);
   const stats = {
+    total:    leads.length,
     nouveau:  leads.filter(l => l.status === "nouveau").length,
     en_cours: leads.filter(l => l.status === "en_cours").length,
     converti: leads.filter(l => l.status === "converti").length,
-    total:    leads.length,
+    perdu:    leads.filter(l => l.status === "perdu").length,
+    archive:  leads.filter(l => l.status === "archive").length,
   };
 
   const timeAgo = (dt: string) => {
@@ -99,7 +102,7 @@ export function LeadsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold text-white">Demandes de projet</h1>
-          <p className="mt-1 text-sm text-white/40">Formulaires soumis depuis le site NUMAFRIQ</p>
+          <p className="mt-1 text-sm text-white/40">Formulaires soumis depuis le site Afrilex Conseil</p>
         </div>
         <button onClick={load} className="flex items-center gap-2 rounded-xl border border-white/10 px-4 py-2 text-sm text-white/50 hover:border-white/25 hover:text-white transition">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -108,12 +111,14 @@ export function LeadsPage() {
       </div>
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
         {[
           { label: "Total", value: stats.total, color: "text-white" },
           { label: "Nouveaux", value: stats.nouveau, color: "text-lime" },
           { label: "En cours", value: stats.en_cours, color: "text-coral" },
           { label: "Convertis", value: stats.converti, color: "text-violet" },
+          { label: "Perdus", value: stats.perdu, color: "text-white/35" },
+          { label: "Archivés", value: stats.archive, color: "text-white/55" },
         ].map(k => (
           <div key={k.label} className={`${card} border p-4`}>
             <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40">{k.label}</p>
@@ -124,7 +129,7 @@ export function LeadsPage() {
 
       {/* Filter tabs */}
       <div className="flex gap-2 flex-wrap">
-        {[["all","Tous"], ["nouveau","Nouveaux"], ["en_cours","En cours"], ["converti","Convertis"], ["perdu","Perdus"]].map(([v, l]) => (
+        {[["all","Tous"], ["nouveau","Nouveaux"], ["en_cours","En cours"], ["converti","Convertis"], ["perdu","Perdus"], ["archive","Archivés"]].map(([v, l]) => (
           <button key={v} onClick={() => setFilter(v)}
             className={`rounded-full px-4 py-1.5 text-xs font-semibold transition ${filter === v ? "bg-coral text-white" : "border border-white/10 text-white/40 hover:text-white"}`}>
             {l}
@@ -170,8 +175,8 @@ export function LeadsPage() {
                 {/* Status */}
                 <StatusBadge status={lead.status} />
                 {/* Time */}
-                <p className="hidden md:block text-xs text-white/30 shrink-0 w-20 text-right">{timeAgo(lead.created_at)}</p>
-                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 text-white/20 shrink-0"><path d="M7 7l6 3-6 3V7z"/></svg>
+                <p className="hidden md:block text-xs text-white/55 shrink-0 w-20 text-right">{timeAgo(lead.created_at)}</p>
+                <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4 text-white/48 shrink-0"><path d="M7 7l6 3-6 3V7z"/></svg>
               </motion.button>
             ))}
           </div>
@@ -198,7 +203,7 @@ export function LeadsPage() {
                     <p className="text-xs text-white/40">{timeAgo(selected.created_at)}</p>
                   </div>
                 </div>
-                <button onClick={() => setSelected(null)} className="rounded-lg p-2 text-white/30 hover:text-white hover:bg-white/[0.06] transition">
+                <button onClick={() => setSelected(null)} className="rounded-lg p-2 text-white/55 hover:text-white hover:bg-white/[0.06] transition">
                   <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" className="h-4 w-4"><path d="M15 5L5 15M5 5l10 10"/></svg>
                 </button>
               </div>
@@ -244,14 +249,14 @@ export function LeadsPage() {
                       {Object.entries(STATUS_CFG).map(([v, cfg]) => (
                         <button key={v} type="button"
                           onClick={() => setEditForm(f => ({ ...f, status: v as Lead["status"] }))}
-                          className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${editForm.status === v ? cfg.color : "border-white/10 text-white/30 hover:text-white"}`}>
+                          className={`rounded-xl border px-3 py-2 text-xs font-semibold transition ${editForm.status === v ? cfg.color : "border-white/10 text-white/55 hover:text-white"}`}>
                           {cfg.label}
                         </button>
                       ))}
                     </div>
                   </div>
 
-                  {hasRole(user, "admin") && (
+                  {hasRole(user, "agent") && (
                     <div>
                       <label className="block text-xs font-semibold text-white/40 mb-2">Assigner à</label>
                       <select
@@ -272,7 +277,7 @@ export function LeadsPage() {
                       onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
                       rows={3}
                       placeholder="Notes de suivi, compte-rendu d'appel…"
-                      className="w-full resize-none rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder:text-white/20 focus:border-lime/40 focus:outline-none"
+                      className="w-full resize-none rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder:text-white/45 focus:border-lime/40 focus:outline-none"
                     />
                   </div>
                 </div>
@@ -282,7 +287,7 @@ export function LeadsPage() {
               <div className="border-t border-white/[0.06] px-6 py-4 flex items-center justify-between gap-3">
                 {hasRole(user, "admin") && (
                   <button onClick={() => deleteLead(selected.id)}
-                    className="rounded-xl border border-red-500/20 px-4 py-2.5 text-xs font-semibold text-red-400/70 hover:border-red-500/40 hover:text-red-400 transition">
+                    className="rounded-xl border border-coral/25 px-4 py-2.5 text-xs font-semibold text-coral/70 hover:border-coral/45 hover:text-coral transition">
                     Supprimer
                   </button>
                 )}

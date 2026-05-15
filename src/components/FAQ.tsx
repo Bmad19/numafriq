@@ -15,7 +15,7 @@ function Item({ q, a }: { q: string; a: string }) {
       >
         <span className="font-medium text-mist leading-snug">{q}</span>
         <span
-          className={`shrink-0 flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 text-mist/50 transition ${open ? "bg-lime/10 border-lime/30 rotate-45 text-lime" : ""}`}
+          className={`shrink-0 flex h-8 w-8 items-center justify-center rounded-lg border border-white/15 text-mist/72 transition ${open ? "bg-lime/10 border-lime/30 rotate-45 text-lime" : ""}`}
           aria-hidden
         >
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
@@ -26,7 +26,7 @@ function Item({ q, a }: { q: string; a: string }) {
       <div
         className={`overflow-hidden transition-all duration-300 ${open ? "max-h-40 pb-5 opacity-100" : "max-h-0 opacity-0"}`}
       >
-        <p className="text-sm text-mist/60 leading-relaxed">{a}</p>
+        <p className="text-sm text-mist/78 leading-relaxed">{a}</p>
       </div>
     </div>
   );
@@ -46,12 +46,12 @@ export function FAQ() {
               <h2 className="mt-3 font-display text-3xl font-bold text-mist sm:text-4xl text-balance">
                 {t("faq.title")}
               </h2>
-              <p className="mt-4 text-mist/55 leading-relaxed">{t("faq.sub")}</p>
+              <p className="mt-4 text-mist/77 leading-relaxed">{t("faq.sub")}</p>
               <a
-                href="mailto:info@numafriq.com"
+                href="mailto:info@afrilexconseil.com"
                 className="mt-6 inline-block text-sm font-medium text-lime transition hover:text-lime/80 hover:underline"
               >
-                info@numafriq.com →
+                info@afrilexconseil.com →
               </a>
             </div>
           </AnimateIn>

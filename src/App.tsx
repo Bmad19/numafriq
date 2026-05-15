@@ -6,9 +6,14 @@ import { SiteLayout } from "./layouts/SiteLayout";
 const HomePage     = lazy(() => import("./pages/HomePage").then(m => ({ default: m.HomePage })));
 const ServicesPage = lazy(() => import("./pages/ServicesPage").then(m => ({ default: m.ServicesPage })));
 const WorkPage     = lazy(() => import("./pages/WorkPage").then(m => ({ default: m.WorkPage })));
+const BlogPage = lazy(() => import("./pages/BlogPage").then(m => ({ default: m.BlogPage })));
+const BlogArticlePage = lazy(() =>
+  import("./pages/BlogArticlePage").then(m => ({ default: m.BlogArticlePage }))
+);
 const PricingPage  = lazy(() => import("./pages/PricingPage").then(m => ({ default: m.PricingPage })));
 const AboutPage    = lazy(() => import("./pages/AboutPage").then(m => ({ default: m.AboutPage })));
 const ContactPage  = lazy(() => import("./pages/ContactPage").then(m => ({ default: m.ContactPage })));
+const CareersPage  = lazy(() => import("./pages/CareersPage").then(m => ({ default: m.CareersPage })));
 const LegalPage    = lazy(() => import("./pages/LegalPage").then(m => ({ default: m.LegalPage })));
 
 const BureauApp = lazy(() => import("./bureau/BureauApp").then(m => ({ default: m.BureauApp })));
@@ -17,10 +22,10 @@ const ClientApp = lazy(() => import("./client/ClientApp").then(m => ({ default: 
 // Loader pleine page (bureau/client)
 function FullPageLoader({ color = "coral" }: { color?: "coral" | "lime" }) {
   return (
-    <div className="min-h-screen bg-[#08090b] flex items-center justify-center">
+    <div className="min-h-screen bg-ink flex items-center justify-center">
       <div className="flex flex-col items-center gap-4">
-        <div className={`h-10 w-10 animate-spin rounded-full border-2 border-white/10 ${color === "lime" ? "border-t-[#2aa8ff]" : "border-t-[#e61f2f]"}`} />
-        <p className="text-sm text-white/30">Chargement…</p>
+        <div className={`h-10 w-10 animate-spin rounded-full border-2 border-white/10 ${color === "lime" ? "border-t-mist" : "border-t-coral"}`} />
+        <p className="text-sm text-white/55">Chargement…</p>
       </div>
     </div>
   );
@@ -42,9 +47,17 @@ export default function App() {
       <Route element={<SiteLayout />}>
         <Route index element={<Suspense fallback={<PageLoader />}><HomePage /></Suspense>} />
         <Route path="/services"        element={<Suspense fallback={<PageLoader />}><ServicesPage /></Suspense>} />
+        <Route path="/expertise"       element={<Navigate to="/services" replace />} />
         <Route path="/realisations"    element={<Suspense fallback={<PageLoader />}><WorkPage /></Suspense>} />
-        <Route path="/tarifications"   element={<Suspense fallback={<PageLoader />}><PricingPage /></Suspense>} />
+        <Route path="/organisation"    element={<Navigate to="/realisations" replace />} />
+        <Route path="/blog/:slug" element={<Suspense fallback={<PageLoader />}><BlogArticlePage /></Suspense>} />
+        <Route path="/blog" element={<Suspense fallback={<PageLoader />}><BlogPage /></Suspense>} />
+        <Route path="/tarifications" element={<Navigate to="/blog" replace />} />
+        <Route path="/offres"        element={<Suspense fallback={<PageLoader />}><PricingPage /></Suspense>} />
         <Route path="/apropos"         element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
+        <Route path="/recrutement"     element={<Suspense fallback={<PageLoader />}><CareersPage /></Suspense>} />
+        <Route path="/carrieres"       element={<Navigate to="/recrutement" replace />} />
+        <Route path="/careers"         element={<Navigate to="/recrutement" replace />} />
         <Route path="/contact"         element={<Suspense fallback={<PageLoader />}><ContactPage /></Suspense>} />
         <Route path="/mentions-legales"   element={<Suspense fallback={<PageLoader />}><LegalPage title="Mentions légales" /></Suspense>} />
         <Route path="/confidentialite"    element={<Suspense fallback={<PageLoader />}><LegalPage title="Politique de confidentialité" /></Suspense>} />

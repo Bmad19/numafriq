@@ -91,7 +91,7 @@ $confirmHtml = "
 <!DOCTYPE html>
 <html lang='fr'>
 <head><meta charset='UTF-8'></head>
-<body style='font-family:Arial,sans-serif;background:#0a0a0c;color:#f4f2ef;margin:0;padding:0;'>
+<body style='font-family:Arial,sans-serif;background:#263a34;color:#fffefb;margin:0;padding:0;'>
   <div style='max-width:600px;margin:40px auto;background:#111113;border-radius:16px;overflow:hidden;border:1px solid rgba(255,255,255,0.08);'>
     <div style='background:linear-gradient(135deg,#ff6b4a,#8b5cf6);padding:32px 40px;'>
       <h1 style='color:#fff;margin:0;font-size:22px;font-weight:800;'>Demande bien reçue !</h1>

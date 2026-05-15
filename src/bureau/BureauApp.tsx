@@ -11,16 +11,20 @@ import { EquipePage } from "./pages/EquipePage";
 import { RHPage, MissionsPage, RetoursPage, SettingsPage } from "./pages/OtherPages";
 import { ClientMessagesPage } from "./pages/ClientMessagesPage";
 import { LeadsPage } from "./pages/LeadsPage";
+import { AgentAssistantPage } from "./pages/AgentAssistantPage";
+import { JobOffersAdminPage } from "./pages/JobOffersAdminPage";
+import { BlogAdminPage } from "./pages/BlogAdminPage";
+import { MailboxPage } from "./pages/MailboxPage";
 
 function BureauInner() {
   const { user, loading, mustChangePassword } = useAuth();
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#08090b] flex items-center justify-center">
+      <div className="min-h-screen bg-ink flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-coral" />
-          <p className="text-sm text-white/30">Chargement…</p>
+          <p className="text-sm text-white/55">Chargement…</p>
         </div>
       </div>
     );
@@ -42,6 +46,10 @@ function BureauInner() {
         <Route path="retours"       element={<RetoursPage />} />
         <Route path="clients"       element={<ClientMessagesPage />} />
         <Route path="leads"         element={<LeadsPage />} />
+        <Route path="assistant"      element={<AgentAssistantPage />} />
+        <Route path="offres-emploi" element={<JobOffersAdminPage />} />
+        <Route path="blog"          element={<BlogAdminPage />} />
+        <Route path="mailbox"       element={<MailboxPage />} />
         <Route path="equipe"        element={<EquipePage />} />
         <Route path="parametres"    element={<SettingsPage />} />
         <Route path="*"             element={<Navigate to="overview" replace />} />

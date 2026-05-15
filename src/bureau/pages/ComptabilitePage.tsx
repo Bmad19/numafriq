@@ -46,8 +46,8 @@ export function ComptabilitePage() {
       <div className="grid grid-cols-3 gap-4">
         {[
           { label: "Recettes",  value: fmt(stats?.recettes ?? 0), color: "text-lime",   border: "border-lime/20" },
-          { label: "Dépenses",  value: fmt(stats?.depenses ?? 0), color: "text-red-400", border: "border-red-500/20" },
-          { label: "Solde net", value: fmt(stats?.solde ?? 0),    color: stats && stats.solde >= 0 ? "text-white" : "text-red-400", border: "border-white/10" },
+          { label: "Dépenses",  value: fmt(stats?.depenses ?? 0), color: "text-coral", border: "border-coral/25" },
+          { label: "Solde net", value: fmt(stats?.solde ?? 0),    color: stats && stats.solde >= 0 ? "text-white" : "text-coral", border: "border-white/10" },
         ].map(k => (
           <div key={k.label} className={`rounded-2xl border ${k.border} bg-white/[0.02] p-5`}>
             <p className="text-[11px] font-bold uppercase tracking-wider text-white/40">{k.label}</p>
@@ -69,19 +69,19 @@ export function ComptabilitePage() {
               <tr key={e.id} className="hover:bg-white/[0.02] transition">
                 <td className="px-5 py-3 text-white/50 text-xs">{new Date(e.date).toLocaleDateString("fr-FR")}</td>
                 <td className="px-5 py-3">
-                  <span className={`text-xs font-bold uppercase rounded-full border px-2 py-0.5 ${e.type==="recette" ? "text-lime border-lime/20 bg-lime/5" : "text-red-400 border-red-500/20 bg-red-500/5"}`}>
+                  <span className={`text-xs font-bold uppercase rounded-full border px-2 py-0.5 ${e.type==="recette" ? "text-lime border-lime/20 bg-lime/5" : "text-coral border-coral/25 bg-coral/5"}`}>
                     {e.type}
                   </span>
                 </td>
                 <td className="px-5 py-3 text-white/60 text-xs">{e.category}</td>
                 <td className="px-5 py-3 text-white/80">{e.description}</td>
-                <td className={`px-5 py-3 font-bold ${e.type==="recette" ? "text-lime" : "text-red-400"}`}>
+                <td className={`px-5 py-3 font-bold ${e.type==="recette" ? "text-lime" : "text-coral"}`}>
                   {e.type==="recette" ? "+" : "–"}{e.amount.toLocaleString("fr-FR")}
                 </td>
                 <td className="px-5 py-3 text-white/35 text-xs">{e.created_by_name}</td>
                 <td className="px-5 py-3">
                   {isAdmin && <button onClick={async () => { if (confirm("Supprimer ?")) { await accountingApi.delete(e.id); load(); } }}
-                    className="text-xs text-red-400 hover:text-red-300 transition">×</button>}
+                    className="text-xs text-coral hover:text-coral/80 transition">×</button>}
                 </td>
               </tr>
             ))}
@@ -102,7 +102,7 @@ export function ComptabilitePage() {
                 <div className="grid grid-cols-2 gap-3">
                   {(["recette","depense"] as const).map(t => (
                     <button key={t} type="button" onClick={() => setForm(f => ({...f,type:t,category:cats[t][0]}))}
-                      className={`py-3 rounded-xl text-sm font-bold transition border ${form.type===t ? (t==="recette" ? "bg-lime/15 border-lime/30 text-lime" : "bg-red-500/15 border-red-500/30 text-red-400") : "border-white/10 text-white/40"}`}>
+                      className={`py-3 rounded-xl text-sm font-bold transition border ${form.type===t ? (t==="recette" ? "bg-lime/15 border-lime/30 text-lime" : "bg-coral/15 border-coral/30 text-coral") : "border-white/10 text-white/40"}`}>
                       {t === "recette" ? "✚ Recette" : "✖ Dépense"}
                     </button>
                   ))}

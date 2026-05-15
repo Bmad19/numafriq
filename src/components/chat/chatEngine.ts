@@ -18,212 +18,141 @@ interface Response {
   quickReplies?: string[];
 }
 
-// ─── Knowledge base ────────────────────────────────────────────────────────────
-
 const KB = {
-  services: `Chez **NUMAFRIQ**, on propose 6 services principaux :
-• 🌐 **Sites & landing pages** — pages rapides, SEO-first, orientées conversion
-• 🛒 **E-commerce** — boutiques fluides, paiement multi-devises
-• 🎨 **Identité visuelle & UI** — design system, direction artistique
-• ⚡ **Performance & SEO** — Core Web Vitals, accessibilité WCAG
-• 💻 **Applications web sur-mesure** — SaaS, dashboards, portails clients
-• 🛡️ **Maintenance & accompagnement** — support, mises à jour, évolutions
+  services: `**Afrilex Conseil** accompagne entreprises et institutions sur :
+• **Droit des affaires et contrats** — rédaction, relecture, négociation
+• **Fiscalité** — optimisation licite, déclarations, relations avec les administrations
+• **Comptabilité et référentiels OHADA** — mise en conformité, diagnostic de dossiers
+• **Contentieux et médiation** — stratégie et représentation lorsque pertinent
+• **Investissement et structuration** — montages pour projets en Afrique de l'Ouest, autres pays OHADA et diaspora
+• **Conformité et gouvernance** — bonnes pratiques et documents utiles aux organes sociaux
 
-Vous voulez en savoir plus sur l'un d'eux ?`,
+Indiquez votre secteur ou la nature de votre dossier pour orienter la réponse.`,
 
-  pricing: `Nos tarifs sont transparents :
-• **Landing page** → à partir de **1 500 €**
-• **Site vitrine** → à partir de **3 000 €**
-• **E-commerce** → à partir de **5 000 €**
-• **Application sur-mesure** → devis sur mesure
+  pricing: `Les **honoraires** dépendent de chaque mission (complexité, urgence, enjeux).
 
-💡 On établit un devis détaillé après un appel découverte gratuit de 30 min — sans engagement.
+• Premier contact ou demande d'orientation : par email ou WhatsApp (+226 52 20 91 91).
+• Toute mission est précédée d'une **proposition écrite** (forfait ou temps passé) avant engagement.
 
-Voulez-vous réserver un créneau ?`,
+Pour une estimation indicative : **info@afrilexconseil.com** ou le formulaire du site.`,
 
-  timeline: `Nos délais types :
-• **Landing page** → 2 à 3 semaines
-• **Site vitrine complet** → 4 à 6 semaines
-• **E-commerce** → 6 à 10 semaines
-• **Application sur-mesure** → 8 à 16 semaines
+  timeline: `Les délais varient selon la nature du dossier :
+• **Actes ponctuels** (lettres, revues simples) — quelques jours ouvrés après réception des pièces
+• **Missions récurrentes** (tenue, fiscalité) — calendrier convenu avec vous
+• **Contentieux ou dossiers volumineux** — échéances fixées avec vous selon la procédure
 
-Le délai dépend de la complexité et de votre réactivité sur les validations. On commence toujours dans la semaine suivant la signature.`,
+Une fois les éléments clarifiés et la mission formalisée, le cabinet vous communique un planning réaliste.`,
 
-  process: `Notre méthode en 5 étapes :
-1. **Immersion** — atelier discovery pour comprendre vos enjeux
-2. **Wireframes** — architecture et prototypes validés ensemble
-3. **Design** — interfaces haute-fidélité dans Figma
-4. **Développement** — React/Next.js, performance, accessibilité
-5. **Mise en ligne** — déploiement + 30 jours d'accompagnement inclus
+  process: `Notre méthode type :
+1. **Qualification** — compréhension du besoin et des pièces disponibles
+2. **Proposition** — périmètre, livrables, honoraires et délais
+3. **Mission** — exécution avec points d'étape lorsque nécessaire
+4. **Transmission** — restitution documentée et recommandations
 
-À chaque étape, vous validez avant qu'on passe à la suivante.`,
+Le secret professionnel et la confidentialité s'appliquent à chaque étape.`,
 
-  about: `**NUMAFRIQ** est une agence web & identité digitale fondée sur un principe simple : créativité africaine, standards internationaux.
+  about: `**Afrilex Conseil** est un cabinet d'**assistance juridique, fiscale et comptable**, basé à **Ouagadougou** et intervenant en **Afrique de l'Ouest**, dans les **autres pays OHADA** et auprès de la **diaspora**.
 
-On est une petite équipe senior (pas de stagiaires sur vos projets), avec un process transparent et des livraisons régulières.
+Nous privilégions la clarté des missions, la proximité avec les directions et une approche conforme aux standards internationaux comme aux cadres régionaux (dont OHADA lorsque pertinent).`,
 
-On travaille avec des marques en **Afrique francophone**, en **France**, en **Belgique** et au **Canada**.`,
+  contact: `Vous pouvez nous joindre :
+• 📧 **Email** : info@afrilexconseil.com
+• 💬 **WhatsApp** : +226 52 20 91 91
+• 📝 **Formulaire** sur la page Contact du site
 
-  contact: `Vous pouvez nous joindre de plusieurs façons :
-• 📧 **Email** : info@numafriq.com
-• 💬 **Ce chat** — je transmets votre message à l'équipe
-• 📅 **Appel découverte** gratuit de 30 min (sans engagement)
+Nous vous répondons en général sous **24 à 48 h ouvrées**. Souhaitez-vous être rappelé(e) ?`,
 
-On répond sous **24h ouvrées**. Voulez-vous qu'on vous recontacte ?`,
+  confidentiality: `Le cabinet applique le **secret professionnel** et des mesures de **confidentialité** adaptées aux dossiers qui nous sont confiés.
 
-  stack: `On travaille principalement avec :
-**Front-end** : React, Next.js, TypeScript, Tailwind CSS
-**CMS** : Sanity, Contentful, WordPress headless
-**E-commerce** : Shopify, WooCommerce, solutions custom
-**Back-end** : Node.js, Supabase, Firebase
-**Design** : Figma, Framer
-**Déploiement** : Vercel, Netlify, OVH
+Les échanges via ce chat sont une aide générale ; ils **ne constituent pas un conseil juridique personnalisé** tant qu'une mission formelle n'est pas ouverte.`,
 
-On choisit la stack adaptée à vos besoins, pas à nos habitudes.`,
+  ohada: `Lorsque votre dossier relève du périmètre **OHADA**, nous pouvons vous accompagner sur les aspects comptables et juridiques articulés avec les **Actes uniformes** applicables, dans la mesure du mandat qui nous est confié.
 
-  maintenance: `Nos forfaits maintenance mensuelle incluent :
-• Mises à jour de sécurité & CMS
-• Corrections de bugs
-• Petites évolutions (jusqu'à 2h/mois)
-• Support technique prioritaire (réponse < 4h)
-• Rapport mensuel de performance
+Pour une analyse précise, il nous faut le contexte factuel et les documents pertinents.`,
 
-Tarifs à partir de **150 €/mois**. On peut discuter d'un forfait adapté à votre projet.`,
+  litigation: `Pour tout **contentieux** ou risque de litige, la première étape est une synthèse des faits et des pièces. Le cabinet peut alors proposer une stratégie (négociation, médiation, voies juridictionnelles selon les cas).
 
-  portfolio: `Parmi nos réalisations récentes :
-• **Maison Atlas** (Luxe & retail) — refonte e-commerce, +40% de conversions
-• **Pulse Fitness** (Sport & app) — dashboard client, −60% taux de rebond
-• **Studio Nord** (Créatif) — portfolio animé, ×3 trafic organique
-• **Greenline** (Impact RSE) — landing lead gen, 1 200 leads/mois
-
-Chaque projet est accompagné d'un case study détaillé. Lequel vous intéresse ?`,
+Contact préférentiel : **info@afrilexconseil.com** avec un résumé de la situation.`,
 };
-
-// ─── Intents ───────────────────────────────────────────────────────────────────
 
 const intents: Intent[] = [
   {
     patterns: [/bonjour|salut|hello|bonsoir|hi|coucou/i],
     response: () => ({
-      text: `Bonjour ! 👋 Je suis **NUMA**, l'assistant IA de NUMAFRIQ.
+      text: `Bonjour ! Je suis l'**assistant Afrilex Conseil**.
 
-Je peux vous renseigner sur nos services, tarifs, délais, ou simplement vous mettre en contact avec l'équipe.
+Je peux vous orienter sur nos domaines d'expertise, les modalités de mission ou les contacts du cabinet.
 
 Comment puis-je vous aider ?`,
-      quickReplies: ["Nos services", "Tarifs & devis", "Voir des réalisations", "Parler à l'équipe"],
+      quickReplies: ["Domaines d'expertise", "Honoraires", "Prendre rendez-vous", "OHADA / conformité"],
     }),
   },
   {
-    patterns: [/service|offre|prestati|fait quoi|proposez/i],
-    response: () => ({ text: KB.services, quickReplies: ["Combien ça coûte ?", "Délais ?", "Votre process ?"] }),
+    patterns: [/service|offre|prestation|domaine|expertise|assistance/i],
+    response: () => ({ text: KB.services, quickReplies: ["Honoraires", "Délais", "Confidentialité"] }),
   },
   {
-    patterns: [/prix|tarif|cout|coût|budget|combien|€|euro/i],
-    response: () => ({ text: KB.pricing, quickReplies: ["Délais de livraison ?", "Votre process ?", "Prendre contact"] }),
+    patterns: [/prix|tarif|honoraire|budget|combien|fcfa|€|euro|facture/i],
+    response: () => ({ text: KB.pricing, quickReplies: ["Envoyer un email", "Délais", "Première prise de contact"] }),
   },
   {
-    patterns: [/délai|delai|temps|durée|duree|semaine|livraison|rapide/i],
-    response: () => ({ text: KB.timeline, quickReplies: ["Comment vous travaillez ?", "Voir les tarifs", "Démarrer un projet"] }),
+    patterns: [/délai|delai|temps|durée|duree|urgence|rapide/i],
+    response: () => ({ text: KB.timeline, quickReplies: ["Voir les honoraires", "Comment vous travaillez ?", "Contact"] }),
   },
   {
-    patterns: [/process|méthode|comment.*travail|étape|etape|procédure/i],
-    response: () => ({ text: KB.process, quickReplies: ["Voir les tarifs", "Voir des réalisations", "Démarrer un projet"] }),
+    patterns: [/process|méthode|comment.*travail|étape|etape|mandat/i],
+    response: () => ({ text: KB.process, quickReplies: ["Honoraires", "Contact", "OHADA"] }),
   },
   {
-    patterns: [/qui.*vous|agence|equipe|équipe|numafriq|à propos|about/i],
-    response: () => ({ text: KB.about, quickReplies: ["Vos services ?", "Voir des réalisations", "Nous contacter"] }),
+    patterns: [/qui.*vous|cabinet|equipe|équipe|afrilex|à propos|about/i],
+    response: () => ({ text: KB.about, quickReplies: ["Vos domaines", "Nous contacter", "Honoraires"] }),
   },
   {
-    patterns: [/contact|joindre|appel|rdv|rendez-vous|réunion|reunion/i],
-    response: () => ({ text: KB.contact, quickReplies: ["Envoyer un message", "Voir les tarifs", "Vos services ?"] }),
+    patterns: [/contact|joindre|email|whatsapp|tel|téléphone|telephone/i],
+    response: () => ({ text: KB.contact, quickReplies: ["Honoraires", "Domaines d'expertise", "OHADA"] }),
   },
   {
-    patterns: [/techno|stack|react|next|wordpress|shopify|figma|langage|outil/i],
-    response: () => ({ text: KB.stack, quickReplies: ["Voir les services", "Délais ?", "Tarifs ?"] }),
+    patterns: [/secret|confidential|données|donnee|rgpd/i],
+    response: () => ({ text: KB.confidentiality, quickReplies: ["Contact", "Honoraires"] }),
   },
   {
-    patterns: [/maintenance|support|après.*livraison|apres.*livraison|suivi|mise.*jour/i],
-    response: () => ({ text: KB.maintenance, quickReplies: ["Tarifs maintenance", "Démarrer un projet", "Nous contacter"] }),
+    patterns: [/ohada|acte uniforme|syscohada/i],
+    response: () => ({ text: KB.ohada, quickReplies: ["Services", "Contact"] }),
   },
   {
-    patterns: [/réalisation|realisation|portfolio|projet|travaux|exemple|client|cas|case/i],
-    response: () => ({ text: KB.portfolio, quickReplies: ["Démarrer mon projet", "Voir les tarifs", "Votre process ?"] }),
+    patterns: [/contentieux|litige|tribunal|assignation|médiation|mediation/i],
+    response: () => ({ text: KB.litigation, quickReplies: ["Contact", "Honoraires"] }),
   },
   {
-    patterns: [/devis|audit|gratuit|découverte|decouverte|estim/i],
+    patterns: [/rdv|rendez-vous|appel|visio|réunion|reunion/i],
     response: () => ({
-      text: `Notre **audit découverte** de 30 min est 100% gratuit et sans engagement.
+      text: `Pour fixer un **rendez-vous**, envoyez un court récapitulatif de votre besoin à **info@afrilexconseil.com** ou utilisez le formulaire Contact.
 
-On y aborde :
-• Vos objectifs business
-• L'état de votre présence digitale actuelle
-• Les quick wins identifiés
-• Un premier chiffrage indicatif
-
-Pour réserver, il vous suffit de nous envoyer un message via le formulaire de contact ou à **info@numafriq.com** — on revient vers vous sous 24h.`,
-      quickReplies: ["Envoyer un message", "Voir les tarifs", "Votre process ?"],
-    }),
-  },
-  {
-    patterns: [/seo|référencement|referencement|google|visibilité|visibilite/i],
-    response: () => ({
-      text: `Notre offre **Performance & SEO** couvre :
-• Audit technique complet
-• Optimisation Core Web Vitals (LCP, CLS, FID)
-• Structure de données Schema.org
-• Rédaction et optimisation du contenu
-• Suivi GA4 & Search Console
-• Accessibilité WCAG 2.1 AA
-
-Un bon SEO, ça se construit dès le design — c'est pourquoi on l'intègre dès le départ dans chaque projet.`,
-      quickReplies: ["Tarifs SEO", "Voir les réalisations", "Démarrer un projet"],
-    }),
-  },
-  {
-    patterns: [/ecommerce|e-commerce|boutique|shopify|woocommerce|vente.*ligne/i],
-    response: () => ({
-      text: `Notre offre **E-commerce** comprend :
-• Conception UX du tunnel d'achat
-• Intégration Shopify, WooCommerce ou solution custom
-• Paiement multi-devises (Stripe, PayPal, Mobile Money)
-• Gestion des stocks et des variantes
-• Interface d'administration simple
-• SEO e-commerce natif
-
-Les projets e-commerce démarrent à partir de **5 000 €** et sont livrés en 6 à 10 semaines.`,
-      quickReplies: ["Voir un exemple", "Délais ?", "Prendre contact"],
+Le cabinet vous proposera un créneau et, le cas échéant, les pièces à préparer.`,
+      quickReplies: ["Honoraires", "Domaines d'expertise"],
     }),
   },
   {
     patterns: [/merci|thank|super|parfait|nickel|excellent|top|génial|genial/i],
     response: () => ({
-      text: `Avec plaisir ! 😊 N'hésitez pas si vous avez d'autres questions.
-
-Si vous souhaitez avancer sur un projet, l'équipe est disponible à **info@numafriq.com** ou via le formulaire de contact.`,
-      quickReplies: ["Démarrer un projet", "Autre question"],
+      text: `Avec plaisir. Pour toute suite utile : **info@afrilexconseil.com** ou WhatsApp **+226 52 20 91 91**.`,
+      quickReplies: ["Autre question", "Honoraires"],
     }),
   },
   {
     patterns: [/au revoir|bye|à bientôt|bientot|ciao|tchao/i],
     response: () => ({
-      text: `À bientôt ! 👋 On espère vous accompagner sur votre prochain projet digital.
-
-N'oubliez pas : **info@numafriq.com** pour toute question.`,
+      text: `À bientôt. **Afrilex Conseil** reste disponible via **info@afrilexconseil.com**.`,
     }),
   },
 ];
 
-// ─── Fallback ──────────────────────────────────────────────────────────────────
-
 const fallbacks = [
-  `Je ne suis pas sûr d'avoir bien compris votre question. 🤔 Voici ce que je peux vous dire :`,
-  `Bonne question ! Laissez-moi vous orienter vers ce qui pourrait vous aider :`,
-  `Je transmettrai votre question à l'équipe si besoin. En attendant, voici quelques infos utiles :`,
+  `Je ne suis pas certain d'avoir bien compris votre demande.`,
+  `Pour être précis sur votre situation, le cabinet peut reprendre contact avec vous.`,
 ];
 
-const fallbackQuickReplies = ["Nos services", "Tarifs", "Réalisations", "Contacter l'équipe"];
-
-// ─── Engine ────────────────────────────────────────────────────────────────────
+const fallbackQuickReplies = ["Domaines d'expertise", "Honoraires", "Contact"];
 
 export function getResponse(input: string): Response {
   const trimmed = input.trim().toLowerCase();
@@ -236,7 +165,7 @@ export function getResponse(input: string): Response {
 
   const fallback = fallbacks[Math.floor(Math.random() * fallbacks.length)];
   return {
-    text: `${fallback}\n\nVous pouvez me demander nos **services**, nos **tarifs**, nos **délais**, notre **process**, ou directement **démarrer un projet**.`,
+    text: `${fallback}\n\nPosez une question sur nos **domaines**, les **honoraires**, les **délais**, **OHADA**, ou demandez comment **prendre contact**.`,
     quickReplies: fallbackQuickReplies,
   };
 }
@@ -246,12 +175,12 @@ export function getWelcomeMessage(): Message {
     id: "welcome",
     role: "assistant",
     timestamp: new Date(),
-    text: `Bonjour ! 👋 Je suis **NUMA**, votre assistant digital NUMAFRIQ.
+    text: `Bonjour ! Je suis l'assistant **Afrilex Conseil**.
 
-Je peux répondre à toutes vos questions sur nos services, tarifs, délais et bien plus.
+Je réponds aux questions générales sur le cabinet (domaines, modalités de mission, contacts).
 
 Comment puis-je vous aider ?`,
-    quickReplies: ["Nos services", "Tarifs & devis", "Voir des réalisations", "Démarrer un projet"],
+    quickReplies: ["Domaines d'expertise", "Honoraires", "Prendre rendez-vous", "Politique de confidentialité"],
   };
 }
 

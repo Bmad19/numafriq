@@ -8,10 +8,10 @@ function ClientInner() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#08090b] flex items-center justify-center">
+      <div className="min-h-screen bg-ink flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
           <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/10 border-t-lime" />
-          <p className="text-sm text-white/30">Chargement…</p>
+          <p className="text-sm text-white/55">Chargement…</p>
         </div>
       </div>
     );

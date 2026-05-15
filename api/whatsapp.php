@@ -95,3 +95,22 @@ function waMsgChat(string $userName, string $userPhone, string $subject): string
            "💡 Contact capturé via le chat IA NUMA.\n" .
            "⏰ " . date('d/m/Y H:i');
 }
+
+function waMsgCareerApplication(
+    string $fullName,
+    string $email,
+    string $phone,
+    string $position,
+    string $contract,
+    string $cvName
+): string {
+    return "📋 *Nouvelle candidature — Recrutements & placement*\n\n" .
+           "👤 *Nom :* {$fullName}\n" .
+           "📧 *Email :* {$email}\n" .
+           "📞 *Tél :* {$phone}\n\n" .
+           "💼 *Poste visé :* {$position}\n" .
+           "📄 *Contrat :* {$contract}\n" .
+           "📎 *CV :* {$cvName}\n\n" .
+           "➡️ Fichier sur le serveur : dossier api/uploads/cvs/\n" .
+           "⏰ " . date('d/m/Y H:i');
+}

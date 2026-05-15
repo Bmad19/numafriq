@@ -1,11 +1,34 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig({
+/**
+ * Déploiement :
+ * - Sans variable → `./` (chemins relatifs : tolère téléversement dans un sous-dossier ou racine FTP).
+ * - `VITE_BASE_PATH=/` dans `.env.production` → URLs absolues (recommandé si le site est à la racine du domaine,
+ *   sinon `/recrutement` charge les JS depuis `/recrutement/assets/…` → 404).
+ * - `VITE_BASE_PATH=/mon-site/` → sous-dossier avec basename React Router.
+ *
+ * Utilise loadEnv : seuls `process.env.VITE_*` sans loadEnv ne voient pas `.env.production` au chargement de cette config.
+ */
+function viteBase(mode: string): string {
+  const env = loadEnv(mode, process.cwd(), "");
+  const raw = env.VITE_BASE_PATH?.trim();
+  if (raw === "/") return "/";
+  if (raw && raw !== "") {
+    const lead = raw.startsWith("/") ? raw : `/${raw}`;
+    return lead.endsWith("/") ? lead : `${lead}/`;
+  }
+  return "./";
+}
+
+export default defineConfig(({ mode }) => ({
+  base: viteBase(mode),
   plugins: [react()],
 
   server: {
-    port: 3000,
+    // Premier port libre ≥ 3100 pour ne pas empiéter sur NUMAFRIQ (3000) ; l’URL exacte s’affiche au lancement.
+    host: true,
+    port: 3100,
     strictPort: false,
     // Pas de header no-cache — Vite gère le cache HMR via les query params ?t=…
     proxy: {
@@ -44,9 +67,9 @@ export default defineConfig({
           }
         },
         // Noms de fichiers avec hash pour cache-busting automatique
-        entryFileNames:  "assets/[name]-[hash].js",
-        chunkFileNames:  "assets/[name]-[hash].js",
-        assetFileNames:  "assets/[name]-[hash][extname]",
+        entryFileNames: "assets/[name]-[hash].js",
+        chunkFileNames: "assets/[name]-[hash].js",
+        assetFileNames: "assets/[name]-[hash][extname]",
       },
     },
     // Purge du dossier dist à chaque build
@@ -70,4 +93,4 @@ export default defineConfig({
   },
 
   cacheDir: "node_modules/.vite",
-});
+}));

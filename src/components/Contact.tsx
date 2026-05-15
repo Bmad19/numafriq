@@ -1,27 +1,28 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTranslation } from "react-i18next";
+import { CONTACT_TEAM_PORTRAITS_IDS, imgPortrait } from "../config/siteImagery";
 import { AnimateIn } from "./animations/AnimateIn";
+import { readRuntimeEnv } from "../lib/runtimeEnv";
 
 type FormState = "idle" | "loading" | "success" | "error";
 
-// URL de l'API PHP — en développement local, pointe vers l'API de prod
-const API_URL = import.meta.env.VITE_API_URL ?? "/api/contact.php";
+const API_URL = readRuntimeEnv("VITE_API_URL", "/api/contact.php");
 
 const servicesOpts = [
-  { value: "site-vitrine", icon: "🌐" },
-  { value: "ecommerce",    icon: "🛒" },
-  { value: "seo",          icon: "📈" },
-  { value: "branding",     icon: "🎨" },
-  { value: "app",          icon: "⚙️" },
-  { value: "autre",        icon: "💬" },
+  { value: "conseil-juridique", icon: "⚖️" },
+  { value: "fiscalite",         icon: "📊" },
+  { value: "comptabilite",      icon: "📑" },
+  { value: "structuration",     icon: "🏛️" },
+  { value: "investissement",    icon: "🌍" },
+  { value: "autre",             icon: "💬" },
 ];
 
-const budgetValues  = ["<500k","500k-900k","900k-1.8m","1.8m+"];
-const timelineValues = ["urgent","2-4sem","1-2mois","flexible"];
+const budgetValues  = ["standard","moderee","urgente","strategique"];
+const timelineValues = ["nouveau","en-cours","contentieux","prevention"];
 
 const inputCls =
-  "w-full rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4 text-sm text-mist placeholder:text-mist/30 backdrop-blur-sm transition-all focus:border-lime/50 focus:outline-none focus:ring-1 focus:ring-lime/30 hover:border-white/20";
+  "w-full rounded-2xl border border-white/14 bg-white/[0.07] px-5 py-4 text-sm text-mist placeholder:text-mist/57 backdrop-blur-sm transition-all focus:border-lime/55 focus:outline-none focus:ring-1 focus:ring-lime/35 hover:border-white/26";
 
 const selectCls = inputCls + " appearance-none cursor-pointer";
 
@@ -34,8 +35,8 @@ function Chip({
       onClick={onClick}
       className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold transition-all active:scale-95 ${
         selected
-          ? "border-lime/60 bg-lime/10 text-lime shadow-[0_0_12px_rgba(163,230,53,0.2)]"
-          : "border-white/10 bg-white/[0.03] text-mist/60 hover:border-white/25 hover:text-mist"
+          ? "border-lime/60 bg-lime/12 text-lime shadow-[0_0_14px_rgba(248,244,234,0.28)]"
+          : "border-white/12 bg-white/[0.045] text-mist/80 hover:border-white/28 hover:text-mist"
       }`}
     >
       <span>{icon}</span>
@@ -49,9 +50,9 @@ export function Contact() {
   const [state, setState] = useState<FormState>("idle");
   const [step, setStep] = useState(1);
 
-  const services  = servicesOpts.map((s, i) => ({ ...s, label: ["Site vitrine","E-commerce","SEO / Visibilité","Branding / UI","Application web","Autre besoin"][i] }));
-  const budgets   = budgetValues.map((v, i) => ({ value: v, label: ["< 500 000 FCFA","500k – 900k FCFA","900k – 1,8M FCFA","1,8M FCFA et +"][i] }));
-  const timelines = timelineValues.map((v, i) => ({ value: v, label: ["Urgent","2 – 4 semaines","1 – 2 mois","Flexible"][i] }));
+  const services  = servicesOpts.map((s, i) => ({ ...s, label: ["Conseil juridique","Fiscalité","Comptabilité","Structuration / montages","Investissement & projets","Autre demande"][i] }));
+  const budgets   = budgetValues.map((v, i) => ({ value: v, label: ["Standard","Modérée","Urgente","Stratégique"][i] }));
+  const timelines = timelineValues.map((v, i) => ({ value: v, label: ["Nouveau dossier","Dossier en cours","Contentieux / litige","Prévention / audit"][i] }));
   const steps     = t("contact.steps", { returnObjects: true }) as string[];
   const items     = t("contact.items", { returnObjects: true }) as Array<{ icon: string; label: string }>;
   const [fields, setFields] = useState({
@@ -103,8 +104,8 @@ export function Contact() {
   const canNext2 = !!fields.service;
 
   return (
-    <section id="contact" className="scroll-mt-[96px] px-4 pb-24 pt-8 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-6xl">
+    <section id="contact" className="scroll-mt-[112px] pb-24 pt-8 sm:scroll-mt-[128px]">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
         <div className="grid gap-12 lg:grid-cols-[1fr_1.15fr] lg:items-start lg:gap-16">
 
           {/* ── Panneau gauche : infos & social proof ── */}
@@ -114,7 +115,7 @@ export function Contact() {
               <h2 className="mt-3 font-display text-3xl font-extrabold leading-tight text-mist sm:text-4xl text-balance">
                 {t("contact.title")}
               </h2>
-              <p className="mt-5 text-sm leading-relaxed text-mist/55">
+              <p className="mt-5 text-sm leading-relaxed text-mist/77">
                 {t("contact.sub")}
               </p>
 
@@ -128,13 +129,13 @@ export function Contact() {
                           ? "border-lime bg-lime text-ink"
                           : step === i + 1
                           ? "border-coral bg-coral/10 text-coral"
-                          : "border-white/10 text-mist/25"
+                          : "border-white/14 text-mist/50"
                       }`}
                     >
                       {step > i + 1 ? "✓" : i + 1}
                     </div>
-                    <span className={`ml-2 hidden sm:inline text-xs font-semibold whitespace-nowrap ${step === i + 1 ? "text-mist" : "text-mist/30"}`}>{s}</span>
-                    {i < 2 && <div className={`mx-3 sm:mx-4 h-px w-6 sm:w-8 shrink-0 transition-all ${step > i + 1 ? "bg-lime/40" : "bg-white/10"}`} />}
+                    <span className={`ml-2 hidden sm:inline text-xs font-semibold whitespace-nowrap ${step === i + 1 ? "text-mist" : "text-mist/52"}`}>{s}</span>
+                    {i < 2 && <div className={`mx-3 sm:mx-4 h-px w-6 sm:w-8 shrink-0 transition-all ${step > i + 1 ? "bg-lime/45" : "bg-white/14"}`} />}
                   </div>
                 ))}
               </div>
@@ -142,7 +143,7 @@ export function Contact() {
               {/* Infos rapides */}
               <div className="mt-10 space-y-3">
                 {items.map((item) => (
-                  <div key={item.label} className="flex items-center gap-3 text-sm text-mist/50">
+                  <div key={item.label} className="flex items-center gap-3 text-sm text-mist/72">
                     <span className="text-base">{item.icon}</span>
                     {item.label}
                   </div>
@@ -150,30 +151,35 @@ export function Contact() {
               </div>
 
               {/* Social proof */}
-              <div className="mt-10 flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+              <div className="mt-10 flex items-center gap-4 rounded-2xl border border-white/14 bg-white/[0.05] p-5">
                 <div className="flex -space-x-3 shrink-0">
-                  {["1573164713619-24c711fe787e", "1531123897727-8f129e1688ce", "1573164574511-73c773193279"].map((id, i) => (
-                    <img key={i} className="h-9 w-9 rounded-full border-2 border-ink object-cover" src={`https://images.unsplash.com/photo-${id}?auto=format&fit=facearea&facepad=2&w=100&h=100&q=80`} alt="" />
+                  {CONTACT_TEAM_PORTRAITS_IDS.map((id) => (
+                    <img
+                      key={id}
+                      className="h-9 w-9 rounded-full border-2 border-ink object-cover"
+                      src={imgPortrait(id, 144)}
+                      alt=""
+                    />
                   ))}
                 </div>
-                <div className="text-xs text-mist/55">{t("contact.socialProof")}
+                <div className="text-xs text-mist/77">{t("contact.socialProof")}
                 </div>
               </div>
 
               {/* Email direct */}
-              <a href="mailto:info@numafriq.com" className="mt-6 group flex items-center gap-3 text-sm text-mist/50 transition hover:text-lime">
+              <a href="mailto:info@afrilexconseil.com" className="mt-6 group flex items-center gap-3 text-sm text-mist/72 transition hover:text-lime">
                 <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4 shrink-0 text-lime/60 group-hover:text-lime">
                   <path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z" />
                   <path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z" />
                 </svg>
-                info@numafriq.com
+                info@afrilexconseil.com
               </a>
             </div>
           </AnimateIn>
 
           {/* ── Formulaire multi-step ── */}
           <AnimateIn delay={0.15} direction="left">
-            <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.02] backdrop-blur-xl shadow-[0_20px_80px_rgba(0,0,0,0.25)]">
+            <div className="relative overflow-hidden rounded-3xl border border-white/14 bg-white/[0.045] backdrop-blur-xl shadow-[0_22px_72px_rgba(0,0,0,0.2)]">
               {/* Progress bar top */}
               <div className="h-1 bg-white/5">
                 <motion.div
@@ -201,11 +207,11 @@ export function Contact() {
                     </motion.div>
                     <div>
                       <h3 className="font-display text-2xl font-bold text-mist">{t("contact.successTitle")}</h3>
-                      <p className="mt-2 max-w-xs text-sm text-mist/55">
+                      <p className="mt-2 max-w-xs text-sm text-mist/77">
                         {t("contact.successSub")}
                       </p>
                     </div>
-                    <button onClick={reset} className="mt-2 rounded-full border border-white/15 px-6 py-2 text-xs font-semibold text-mist/50 transition hover:border-white/30 hover:text-mist active:scale-95">
+                    <button onClick={reset} className="mt-2 rounded-full border border-white/15 px-6 py-2 text-xs font-semibold text-mist/72 transition hover:border-white/30 hover:text-mist active:scale-95">
                       {t("contact.newMessage")}
                     </button>
                   </motion.div>
@@ -221,10 +227,10 @@ export function Contact() {
                     </div>
                     <div>
                       <h3 className="font-display text-2xl font-bold text-mist">{t("contact.errorTitle")}</h3>
-                      <p className="mt-2 max-w-xs text-sm text-mist/55">
+                      <p className="mt-2 max-w-xs text-sm text-mist/77">
                         Une erreur s'est produite. Veuillez réessayer ou nous écrire directement à{" "}
-                        <a href="mailto:info@numafriq.com" className="text-lime hover:underline">
-                          info@numafriq.com
+                        <a href="mailto:info@afrilexconseil.com" className="text-lime hover:underline">
+                          info@afrilexconseil.com
                         </a>
                       </p>
                     </div>
@@ -239,28 +245,28 @@ export function Contact() {
                         {step === 1 && (
                           <motion.div key="step1" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }} className="space-y-4">
                             <div>
-                              <p className="text-xs font-bold uppercase tracking-widest text-mist/35">1 / 3</p>
+                              <p className="text-xs font-bold uppercase tracking-widest text-mist/57">1 / 3</p>
                               <h3 className="mt-1 font-display text-xl font-bold text-mist">{t("contact.step1.title")}</h3>
                             </div>
 
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div className="relative">
-                                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-mist/40" htmlFor="name">{t("contact.step1.name")}</label>
+                                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-mist/64" htmlFor="name">{t("contact.step1.name")}</label>
                                 <input id="name" name="name" type="text" required value={fields.name} onChange={handleChange} placeholder={t("contact.step1.namePlaceholder")} className={inputCls} />
                               </div>
                               <div>
-                                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-mist/40" htmlFor="company">{t("contact.step1.company")}</label>
+                                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-mist/64" htmlFor="company">{t("contact.step1.company")}</label>
                                 <input id="company" name="company" type="text" value={fields.company} onChange={handleChange} placeholder={t("contact.step1.companyPlaceholder")} className={inputCls} />
                               </div>
                             </div>
 
                             <div className="grid gap-3 sm:grid-cols-2">
                               <div>
-                                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-mist/40" htmlFor="email">{t("contact.step1.email")}</label>
+                                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-mist/64" htmlFor="email">{t("contact.step1.email")}</label>
                                 <input id="email" name="email" type="email" required value={fields.email} onChange={handleChange} placeholder={t("contact.step1.emailPlaceholder")} className={inputCls} />
                               </div>
                               <div>
-                                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-mist/40" htmlFor="phone">{t("contact.step1.phone")}</label>
+                                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-mist/64" htmlFor="phone">{t("contact.step1.phone")}</label>
                                 <input id="phone" name="phone" type="tel" value={fields.phone} onChange={handleChange} placeholder={t("contact.step1.phonePlaceholder")} className={inputCls} />
                               </div>
                             </div>
@@ -270,12 +276,12 @@ export function Contact() {
                         {step === 2 && (
                           <motion.div key="step2" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }} className="space-y-6">
                             <div>
-                              <p className="text-xs font-bold uppercase tracking-widest text-mist/35">2 / 3</p>
+                              <p className="text-xs font-bold uppercase tracking-widest text-mist/57">2 / 3</p>
                               <h3 className="mt-1 font-display text-xl font-bold text-mist">{t("contact.step2.title")}</h3>
                             </div>
 
                             <div>
-                              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-mist/40">{t("contact.step2.servicelabel")}</p>
+                              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-mist/64">{t("contact.step2.servicelabel")}</p>
                               <div className="flex flex-wrap gap-2">
                                 {services.map((s) => (
                                   <Chip key={s.value} label={s.label} icon={s.icon} selected={fields.service === s.value} onClick={() => set("service", s.value)} />
@@ -284,7 +290,7 @@ export function Contact() {
                             </div>
 
                             <div>
-                              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-mist/40">{t("contact.step2.budgetLabel")}</p>
+                              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-mist/64">{t("contact.step2.budgetLabel")}</p>
                               <div className="flex flex-wrap gap-2">
                                 {budgets.map((b) => (
                                   <Chip key={b.value} label={b.label} icon="" selected={fields.budget === b.value} onClick={() => set("budget", b.value)} />
@@ -293,7 +299,7 @@ export function Contact() {
                             </div>
 
                             <div>
-                              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-mist/40">{t("contact.step2.timelineLabel")}</p>
+                              <p className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-mist/64">{t("contact.step2.timelineLabel")}</p>
                               <div className="flex flex-wrap gap-2">
                                 {timelines.map((t) => (
                                   <Chip key={t.value} label={t.label} icon="" selected={fields.timeline === t.value} onClick={() => set("timeline", t.value)} />
@@ -306,18 +312,18 @@ export function Contact() {
                         {step === 3 && (
                           <motion.div key="step3" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} transition={{ duration: 0.3 }} className="space-y-4">
                             <div>
-                              <p className="text-xs font-bold uppercase tracking-widest text-mist/35">3 / 3</p>
+                              <p className="text-xs font-bold uppercase tracking-widest text-mist/57">3 / 3</p>
                               <h3 className="mt-1 font-display text-xl font-bold text-mist">{t("contact.step3.title")}</h3>
                             </div>
                             <div>
-                              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-mist/40" htmlFor="message">{t("contact.step3.label")}</label>
+                              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-mist/64" htmlFor="message">{t("contact.step3.label")}</label>
                               <textarea
                                 id="message" name="message" required rows={6} value={fields.message} onChange={handleChange}
                                 placeholder={t("contact.step3.placeholder")}
                                 className={`${inputCls} resize-none`}
                               />
                             </div>
-                            <p className="text-xs text-mist/30">{t("contact.disclaimer")}</p>
+                            <p className="text-xs text-mist/52">{t("contact.disclaimer")}</p>
                           </motion.div>
                         )}
                       </AnimatePresence>
@@ -328,7 +334,7 @@ export function Contact() {
                       <button
                         type="button"
                         onClick={() => setStep((s) => Math.max(1, s - 1))}
-                        className={`text-xs font-semibold text-mist/40 transition hover:text-mist ${step === 1 ? "invisible" : ""}`}
+                        className={`text-xs font-semibold text-mist/64 transition hover:text-mist ${step === 1 ? "invisible" : ""}`}
                       >
                         {t("contact.back")}
                       </button>
@@ -338,7 +344,7 @@ export function Contact() {
                           type="button"
                           onClick={() => setStep((s) => s + 1)}
                           disabled={step === 1 ? !canNext1 : !canNext2}
-                          className="inline-flex h-11 items-center gap-2 rounded-full bg-coral px-8 text-sm font-bold text-white shadow-[0_0_20px_rgba(255,107,74,0.3)] transition hover:brightness-110 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                          className="inline-flex h-11 items-center gap-2 rounded-full bg-coral px-8 text-sm font-bold text-ink shadow-[0_0_34px_rgba(236,200,90,0.52)] transition hover:brightness-110 active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                           {t("contact.next")}
                           <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4"><path fillRule="evenodd" d="M12.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
@@ -347,7 +353,7 @@ export function Contact() {
                         <button
                           type="submit"
                           disabled={state === "loading" || !fields.message.trim()}
-                          className="inline-flex h-11 items-center gap-2 rounded-full bg-coral px-8 text-sm font-bold text-white shadow-[0_0_20px_rgba(255,107,74,0.3)] transition hover:brightness-110 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
+                          className="inline-flex h-11 items-center gap-2 rounded-full bg-coral px-8 text-sm font-bold text-ink shadow-[0_0_34px_rgba(236,200,90,0.52)] transition hover:brightness-110 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           {state === "loading" ? (
                             <>

@@ -1,0 +1,122 @@
+const fr = {
+  // ── Navigation ──────────────────────────────────────────────────────────
+  nav: {
+    home:          "Accueil",
+    services:      "Services",
+    realisations:  "Réalisations",
+    blog:          "Blog",
+    apropos:       "A propos",
+    contact:       "Contact",
+    cta:           "Démarrer un projet",
+  },
+
+  // ── Footer ───────────────────────────────────────────────────────────────
+  footer: {
+    tagline:     "Agence web & identité digitale. On conçoit des expériences numériques qui captivent et convertissent — pour les marques africaines et internationales.",
+    navigation:  "Navigation",
+    contact:     "Contact",
+    reponse:     "Réponse sous 24h ouvrées",
+    disponible:  "Disponible pour nouveaux projets",
+    mentions:    "Mentions légales",
+    politique:   "Politique de confidentialité",
+    droits:      "Tous droits réservés.",
+    tags: ["Stratégie", "Web design", "SEO", "Acquisition"],
+  },
+
+  // ── HeroSlider — Accueil ─────────────────────────────────────────────────
+  homeSlides: [
+    {
+      tag: "Présence digitale",
+      eyebrow: "Site vitrine & image de marque",
+      title: "Un site qui inspire\nconfiance et\nconvertit.",
+      sub: "Nous concevons des sites web clairs, rassurants et orientés résultats pour renforcer votre crédibilité et transformer vos visiteurs en clients.",
+      cta: "Créer mon site",
+      ctaSecondary: "Nos réalisations",
+    },
+    {
+      tag: "Acquisition & SEO",
+      eyebrow: "SEO, contenu, acquisition",
+      title: "Soyez trouvé par\nceux qui ont\nbesoin de vous.",
+      sub: "Référencement naturel, campagnes Ads et stratégie de contenu pensés pour votre marché — en Afrique comme à l'international.",
+      cta: "Booster ma visibilité",
+      ctaSecondary: "Nos réalisations",
+    },
+    {
+      tag: "UX & Croissance",
+      eyebrow: "Design & différenciation",
+      title: "Démarquez-vous\navec un design\nqui fait vendre.",
+      sub: "Positionnement, UX et tunnel de conversion pensés pour faire émerger votre marque et défendre votre valeur face à la concurrence.",
+      cta: "Démarrer un projet",
+      ctaSecondary: "Nos réalisations",
+    },
+  ],
+
+  // ── Page d'accueil ───────────────────────────────────────────────────────
+  home: {
+    needTitle:  "De quoi avez-vous besoin ?",
+    need: [
+      {
+        title: "Exister sur le web",
+        text:  "Un site vitrine premium qui crédibilise votre marque, rassure vos prospects et valorise votre savoir-faire.",
+        cta:   "Créer un site web",
+      },
+      {
+        title: "Décrypter le juridique & la conformité",
+        text:  "Articles sélectionnés du cabinet Afrilex Conseil : contrats, gouvernance OHADA et bonnes pratiques pour les dirigeants.",
+        cta:   "Voir le blog",
+      },
+      {
+        title: "Vous différencier durablement",
+        text:  "Positionnement, design et tunnel de conversion pour sortir du lot et mieux défendre votre valeur.",
+        cta:   "Voir nos réalisations",
+      },
+    ],
+    valuesTag:   "Nos valeurs",
+    valuesTitle: "Une méthode claire, orientée business",
+    valuesSub:   "Une méthode simple à comprendre, rigoureuse dans l'exécution et pensée pour créer des résultats visibles.",
+    values: [
+      {
+        title: "Analyser et comprendre",
+        desc:  "On clarifie votre audience, vos objectifs et vos freins avant de produire quoi que ce soit.",
+      },
+      {
+        title: "Co-construire avec vous",
+        desc:  "Chaque étape est validée avec vous : structure, design, contenu et décisions clés.",
+      },
+      {
+        title: "Livrer et faire évoluer",
+        desc:  "Après mise en ligne, on suit vos performances pour améliorer vos conversions et votre visibilité.",
+      },
+    ],
+    refsTag:   "Références",
+    refsTitle: "Des structures qui nous confient leur image et leur croissance digitale",
+    refsSub:   "Nous avons collaboré avec plus de 130 entreprises, allant des startups innovantes aux institutions panafricaines.",
+    refsLink:  "Voir toutes les réalisations",
+    ctaTag:    "Prêt à démarrer ?",
+    ctaTitle:  "Votre site doit vous aider à vendre, rassurer et grandir.",
+    ctaSub:    "Parlons de vos objectifs. Construisons ensemble une plateforme digitale claire, crédible et parfaitement adaptée à la réalité de votre marché africain ou international.",
+    ctaBtn1:   "Lancer mon projet",
+    ctaBtn2:   "Lire le blog",
+  },
+
+  // ── Services ─────────────────────────────────────────────────────────────
+  services: {
+    eyebrow:  "Ce qu'on fait",
+    title:    "Une offre 360°, pensée pour l'Afrique et l'international",
+    sub:      "De la stratégie à l'acquisition, NUMAFRIQ construit des dispositifs digitaux complets, lisibles et adaptés aux réalités du terrain.",
+    approach: "Approche",
+    approachText: "Une lecture simple de vos besoins, des livrables clairs et une exécution conçue pour produire des résultats concrets.",
+    cta:      "Solution prête à cadrer",
+  },
+
+  // ── Process ───────────────────────────────────────────────────────────────
+  process: {
+    eyebrow: "Notre méthode",
+    title:   "Comment on travaille",
+    sub:     "Une méthode de production claire et collaborative, inspirée des meilleures agences web africaines et adaptée à vos objectifs.",
+    cta:     "Démarrer maintenant",
+    steps: [
+      { n: "01", title: "Audit & stratégie",      desc: "Atelier cadrage, analyse marché, concurrence et objectifs. On définit ensemble vos priorités business et les indicateurs à suivre." },
+      { n: "02", title: "Prototype UX & design",  desc: "Arborescence, wireframes et maquettes haute-fidélité validées étape par étape pour garantir une expérience claire et persuasive." },
+      { n: "03", title: "Développement & SEO",    desc: "Intégration performante, responsive, optimisation technique SEO, tracking analytics et tests multi-devices avant mise en ligne." },
+      { n: "04", title: "Lancement & acquisition",desc: "Mise en ligne maîtrisée, paramétrage Google Business/A

@@ -10,7 +10,7 @@ export function ContactPage() {
 
   return (
     <>
-      <Seo title={t("nav.contact")} description="NUMAFRIQ — Parlons de votre projet digital." />
+      <Seo title={t("nav.contact")} description={t("contact.seoDescription")} />
       <HeroSlider slides={slides} />
       <div className="px-4 pb-24 sm:px-6 lg:px-8">
         <Contact />

@@ -2,13 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { useClient } from "./ClientContext";
 import { clientAuthApi, clientMessagesApi, type ClientMessage } from "./api";
 import { motion, AnimatePresence } from "framer-motion";
-import { WhatsAppFloat } from "../components/WhatsAppFloat";
 
 const STATUS_LABELS: Record<string, { label: string; color: string; pct: number }> = {
   en_cours: { label: "En cours", color: "from-lime to-lime/60", pct: 0 },
   termine:  { label: "Terminé",  color: "from-violet to-violet/60", pct: 100 },
-  en_pause: { label: "En pause", color: "from-orange-400 to-orange-400/60", pct: 0 },
-  annule:   { label: "Annulé",   color: "from-red-400 to-red-400/60", pct: 0 },
+  en_pause: { label: "En pause", color: "from-violet to-violet/50", pct: 0 },
+  annule:   { label: "Annulé",   color: "from-coral/80 to-coral/50", pct: 0 },
 };
 
 type Tab = "messages" | "project" | "documents" | "settings";
@@ -78,7 +77,7 @@ export function ClientDashboard() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#08090b] flex flex-col">
+    <div className="min-h-screen bg-ink flex flex-col">
       {/* Fixed blobs */}
       <div className="fixed inset-0 -z-10">
         <div className="absolute top-0 left-0 h-[400px] w-[400px] rounded-full bg-lime/8 blur-[120px]" />
@@ -86,7 +85,7 @@ export function ClientDashboard() {
       </div>
 
       {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#08090b]/90 backdrop-blur-xl px-4 sm:px-6">
+      <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-ink/90 backdrop-blur-xl px-4 sm:px-6">
         <div className="mx-auto flex h-14 max-w-3xl items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-lime/30 to-lime/10 text-sm font-black text-lime border border-lime/20">
@@ -94,7 +93,7 @@ export function ClientDashboard() {
             </div>
             <div>
               <p className="text-sm font-bold text-white leading-none">{client?.name}</p>
-              <p className="text-[10px] text-white/35 mt-0.5">{client?.company || "Espace client NUMAFRIQ"}</p>
+              <p className="text-[10px] text-white/35 mt-0.5">{client?.company || "Espace client Afrilex Conseil"}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -102,12 +101,12 @@ export function ClientDashboard() {
               <span className="h-1.5 w-1.5 rounded-full bg-lime animate-pulse" />
               <span className="text-[10px] font-semibold text-lime/80">En ligne</span>
             </div>
-            <a href="/" className="rounded-lg border border-white/10 p-2 text-white/30 hover:text-white hover:border-white/25 transition" title="Retour au site">
+            <a href="/" className="rounded-lg border border-white/10 p-2 text-white/55 hover:text-white hover:border-white/25 transition" title="Retour au site">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
                 <path d="M3 9.5L10 3l7 6.5V17a1 1 0 01-1 1h-4v-4H8v4H4a1 1 0 01-1-1z"/>
               </svg>
             </a>
-            <button onClick={logout} className="rounded-lg border border-white/10 p-2 text-white/30 hover:text-white hover:border-white/25 transition">
+            <button onClick={logout} className="rounded-lg border border-white/10 p-2 text-white/55 hover:text-white hover:border-white/25 transition">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4">
                 <path d="M9 2H5a1 1 0 00-1 1v14a1 1 0 001 1h4M13 6l4 4-4 4M17 10H7"/>
               </svg>
@@ -144,7 +143,7 @@ export function ClientDashboard() {
             <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] px-4 py-3 flex items-center gap-3">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-coral/40 to-violet/40 text-xs font-black text-white">N</div>
               <div>
-                <p className="text-sm font-semibold text-white">Équipe NUMAFRIQ</p>
+                <p className="text-sm font-semibold text-white">Équipe Afrilex Conseil</p>
                 <p className="text-xs text-lime/70">● Disponible · Réponse sous 24h</p>
               </div>
             </div>
@@ -168,7 +167,7 @@ export function ClientDashboard() {
                           }`}>
                             {m.content}
                           </div>
-                          <span className="text-[10px] text-white/25 px-1">{timeStr(m.created_at)}</span>
+                          <span className="text-[10px] text-white/48 px-1">{timeStr(m.created_at)}</span>
                         </div>
                       </motion.div>
                     );
@@ -179,8 +178,8 @@ export function ClientDashboard() {
 
               <form onSubmit={sendMessage} className="border-t border-white/[0.06] p-3 flex gap-2">
                 <input value={input} onChange={e => setInput(e.target.value)}
-                  placeholder="Écrivez votre message à l'équipe NUMAFRIQ…"
-                  className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:border-lime/40 focus:outline-none transition"
+                  placeholder="Écrivez votre message à l'équipe Afrilex Conseil…"
+                  className="flex-1 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-white placeholder:text-white/45 focus:border-lime/40 focus:outline-none transition"
                   disabled={sending} />
                 <button type="submit" disabled={!input.trim() || sending}
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-lime text-ink hover:brightness-110 transition active:scale-95 disabled:opacity-30">
@@ -266,13 +265,13 @@ export function ClientDashboard() {
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet/15 border border-violet/20 text-xl">📄</div>
                 <div>
                   <h3 className="font-bold text-white">Documents & Livrables</h3>
-                  <p className="text-xs text-white/40">Fichiers partagés par l'équipe NUMAFRIQ</p>
+                  <p className="text-xs text-white/40">Fichiers partagés par l'équipe Afrilex Conseil</p>
                 </div>
               </div>
               <div className="rounded-xl border border-dashed border-white/10 p-10 text-center">
                 <p className="text-3xl mb-3">📂</p>
                 <p className="font-semibold text-white/70">Aucun document disponible</p>
-                <p className="text-xs text-white/30 mt-2 max-w-xs mx-auto">
+                <p className="text-xs text-white/55 mt-2 max-w-xs mx-auto">
                   Vos livrables, maquettes et fichiers partagés par l'équipe apparaîtront ici.
                 </p>
                 <button onClick={() => setTab("messages")}
@@ -290,7 +289,7 @@ export function ClientDashboard() {
             {msg && (
               <div className={`rounded-xl border px-4 py-3 text-sm ${
                 msg.includes("incorrect") || msg.includes("correspondent")
-                  ? "border-red-500/20 bg-red-500/10 text-red-400"
+                  ? "border-coral/25 bg-coral/10 text-coral"
                   : "border-lime/20 bg-lime/8 text-lime"
               }`}>{msg}</div>
             )}
@@ -329,14 +328,14 @@ export function ClientDashboard() {
                   setTimeout(() => setMsg(""), 3000);
                 } catch(e: unknown) { setMsg(e instanceof Error ? e.message : "Erreur"); }
                 finally { setSavingPw(false); }
-              }} className="w-full rounded-xl bg-violet py-3 text-sm font-bold text-white hover:brightness-110 transition disabled:opacity-40">
+              }} className="w-full rounded-xl bg-violet py-3 text-sm font-bold text-ink hover:brightness-110 transition disabled:opacity-40">
                 {savingPw ? "Modification…" : "Modifier le mot de passe"}
               </button>
             </div>
 
             {/* Infos compte */}
             <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 flex items-center gap-4">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-500/10 border border-red-500/20 text-red-400">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-coral/10 border border-coral/25 text-coral">
                 <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
                   <path d="M9 2H5a1 1 0 00-1 1v14a1 1 0 001 1h4M13 6l4 4-4 4M17 10H7"/>
                 </svg>
@@ -345,14 +344,13 @@ export function ClientDashboard() {
                 <p className="text-sm font-semibold text-white">Se déconnecter</p>
                 <p className="text-xs text-white/40">Vous serez redirigé vers la page de connexion</p>
               </div>
-              <button onClick={logout} className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-400 hover:bg-red-500/20 transition">
+              <button onClick={logout} className="rounded-xl border border-coral/25 bg-coral/10 px-4 py-2 text-sm font-semibold text-coral hover:bg-coral/20 transition">
                 Déconnexion
               </button>
             </div>
           </div>
         )}
       </div>
-      <WhatsAppFloat />
     </div>
   );
 }

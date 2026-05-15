@@ -66,7 +66,7 @@ export function ClientMessagesPage() {
 
         <div className="flex-1 overflow-y-auto space-y-1 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-2">
           {convs.length === 0 && (
-            <div className="text-center py-8 text-white/30 text-sm">Aucune conversation</div>
+            <div className="text-center py-8 text-white/55 text-sm">Aucune conversation</div>
           )}
           {convs.map(c => (
             <button key={c.id} onClick={() => loadThread(c)}
@@ -135,7 +135,7 @@ export function ClientMessagesPage() {
                         }`}>
                           {m.content}
                         </div>
-                        <span className="text-[10px] text-white/25 px-1">{timeStr(m.created_at)}</span>
+                        <span className="text-[10px] text-white/48 px-1">{timeStr(m.created_at)}</span>
                       </div>
                     </motion.div>
                   );
@@ -148,7 +148,7 @@ export function ClientMessagesPage() {
             <form onSubmit={sendReply} className="border-t border-white/[0.06] p-4 flex gap-3">
               <input value={input} onChange={e => setInput(e.target.value)}
                 placeholder={`Répondre à ${active.name}…`} disabled={sending}
-                className="flex-1 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder:text-white/25 focus:border-coral/50 focus:outline-none transition" />
+                className="flex-1 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder:text-white/50 focus:border-coral/50 focus:outline-none transition" />
               <button type="submit" disabled={!input.trim() || sending}
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-coral text-white hover:brightness-110 transition active:scale-95 disabled:opacity-30">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-4 w-4 translate-x-0.5">

@@ -7,10 +7,10 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   en_cours: { label: "En cours",  color: "text-lime   bg-lime/10   border-lime/20"   },
   termine:  { label: "Terminé",   color: "text-white  bg-white/5   border-white/10"  },
   en_pause: { label: "En pause",  color: "text-violet bg-violet/10 border-violet/20" },
-  annule:   { label: "Annulé",    color: "text-red-400 bg-red-500/10 border-red-500/20" },
+  annule:   { label: "Annulé",    color: "text-coral bg-coral/10 border-coral/25" },
 };
 const PRIORITY_LABELS: Record<string, string> = {
-  basse: "text-white/40", normale: "text-white/60", haute: "text-coral", urgente: "text-red-400 font-bold",
+  basse: "text-white/40", normale: "text-white/60", haute: "text-coral", urgente: "text-coral font-bold",
 };
 
 const empty: Partial<Project> = { name:"",client:"",description:"",status:"en_cours",priority:"normale",budget:0,deadline:"",progress:0 };
@@ -78,7 +78,7 @@ export function ProjectsPage() {
         ))}
       </div>
 
-      {loading ? <div className="text-center text-white/30 py-20">Chargement…</div> : (
+      {loading ? <div className="text-center text-white/55 py-20">Chargement…</div> : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map(p => {
             const st = STATUS_LABELS[p.status];
@@ -113,7 +113,7 @@ export function ProjectsPage() {
                       Modifier
                     </button>
                     <button onClick={() => deleteProject(p.id)}
-                      className="rounded-xl border border-red-500/20 px-4 py-2 text-xs text-red-400 hover:bg-red-500/10 transition">
+                      className="rounded-xl border border-coral/25 px-4 py-2 text-xs text-coral hover:bg-coral/10 transition">
                       ×
                     </button>
                   </div>
@@ -140,7 +140,7 @@ export function ProjectsPage() {
                   <div key={key}>
                     <label className="block text-[11px] font-bold uppercase tracking-wider text-white/40 mb-1.5">{label}</label>
                     <input type={type} value={(form as Record<string,unknown>)[key] as string ?? ""} onChange={e => setForm(f => ({...f,[key]:e.target.value}))}
-                      className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder:text-white/20 focus:border-coral/50 focus:outline-none transition" />
+                      className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white placeholder:text-white/45 focus:border-coral/50 focus:outline-none transition" />
                   </div>
                 ))}
                 <div className="grid grid-cols-2 gap-4">

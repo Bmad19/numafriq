@@ -2,19 +2,33 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth, hasRole } from "./BureauContext";
-import { leadsApi, agentClientApi } from "./api";
+import { leadsApi, agentClientApi, userHasPermission, type PermissionKey } from "./api";
 
-const NAV = [
-  { to: "/bureau/overview",    label: "Vue d'ensemble",  icon: <GridIcon />,    min: "agent" as const },
-  { to: "/bureau/leads",       label: "Demandes",        icon: <LeadsIcon />,   min: "agent" as const, badge: "leads" },
-  { to: "/bureau/projets",     label: "Projets",         icon: <FolderIcon />,  min: "agent" as const },
-  { to: "/bureau/missions",    label: "Mes missions",    icon: <TaskIcon />,    min: "agent" as const },
-  { to: "/bureau/clients",     label: "Messages clients",icon: <InboxIcon />,   min: "agent" as const, badge: "clients" },
-  { to: "/bureau/chat",        label: "Chat interne",    icon: <ChatIcon />,    min: "agent" as const },
-  { to: "/bureau/rh",          label: "Ressources Hum.", icon: <PeopleIcon />,  min: "admin" as const },
-  { to: "/bureau/comptabilite",label: "Comptabilité",    icon: <ChartIcon />,   min: "admin" as const },
-  { to: "/bureau/retours",     label: "Retours clients", icon: <StarIcon />,    min: "admin" as const },
-  { to: "/bureau/equipe",      label: "Équipe",          icon: <ShieldIcon />,  min: "super_admin" as const },
+type NavEntry = {
+  to: string;
+  label: string;
+  icon: React.ReactNode;
+  min: "agent" | "admin" | "super_admin";
+  /** Permission requise (en plus du rôle). Si absent, n'est filtré que par le rôle. */
+  perm?: PermissionKey;
+  badge?: string;
+};
+
+const NAV: NavEntry[] = [
+  { to: "/bureau/overview",      label: "Vue d'ensemble",  icon: <GridIcon />,    min: "agent" },
+  { to: "/bureau/leads",         label: "Demandes",        icon: <LeadsIcon />,   min: "agent",       perm: "leads",      badge: "leads" },
+  { to: "/bureau/assistant",     label: "Assistant",       icon: <SparkIcon />,   min: "agent",       perm: "assistant" },
+  { to: "/bureau/projets",       label: "Projets",         icon: <FolderIcon />,  min: "agent",       perm: "projects" },
+  { to: "/bureau/missions",      label: "Mes missions",    icon: <TaskIcon />,    min: "agent",       perm: "missions" },
+  { to: "/bureau/clients",       label: "Messages clients",icon: <InboxIcon />,   min: "agent",       perm: "clients",    badge: "clients" },
+  { to: "/bureau/chat",          label: "Chat interne",    icon: <ChatIcon />,    min: "agent",       perm: "chat" },
+  { to: "/bureau/rh",            label: "Ressources Hum.", icon: <PeopleIcon />,  min: "admin",       perm: "hr" },
+  { to: "/bureau/comptabilite",  label: "Comptabilité",    icon: <ChartIcon />,   min: "admin",       perm: "accounting" },
+  { to: "/bureau/retours",       label: "Retours clients", icon: <StarIcon />,    min: "admin",       perm: "feedback" },
+  { to: "/bureau/offres-emploi", label: "Offres d'emploi", icon: <BriefcaseIcon />, min: "admin",     perm: "job_offers" },
+  { to: "/bureau/blog",          label: "Blog",            icon: <PencilIcon />,  min: "admin",       perm: "blog" },
+  { to: "/bureau/mailbox",       label: "Boîte mail LWS",  icon: <MailIcon />,    min: "super_admin", perm: "mailbox" },
+  { to: "/bureau/equipe",        label: "Équipe",          icon: <ShieldIcon />,  min: "super_admin" },
 ];
 
 export function DashboardLayout() {
@@ -35,7 +49,7 @@ export function DashboardLayout() {
     return () => clearInterval(t);
   }, []);
 
-  const visibleNav = NAV.filter(n => hasRole(user, n.min));
+  const visibleNav = NAV.filter(n => hasRole(user, n.min) && (!n.perm || userHasPermission(user, n.perm)));
 
   const roleLabel: Record<string, string> = {
     super_admin: "Super Admin",
@@ -56,7 +70,7 @@ export function DashboardLayout() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#08090b] text-white">
+    <div className="flex h-screen overflow-hidden bg-ink text-white">
 
       {/* Overlay mobile — ferme le sidebar au tap */}
       <AnimatePresence>
@@ -80,13 +94,13 @@ export function DashboardLayout() {
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -260, opacity: 0 }}
             transition={{ duration: 0.22, ease: "easeInOut" }}
-            className="fixed md:relative z-40 shrink-0 flex flex-col h-full w-[260px] border-r border-white/[0.06] bg-[#08090b] md:bg-white/[0.02] overflow-hidden"
+            className="fixed md:relative z-40 shrink-0 flex flex-col h-full w-[260px] border-r border-white/[0.06] bg-ink md:bg-white/[0.02] overflow-hidden"
           >
             {/* Logo */}
             <div className="flex items-center gap-3 px-6 py-5 border-b border-white/[0.06]">
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-coral to-violet text-white text-sm font-black">N</div>
               <div>
-                <p className="text-sm font-bold text-white">NUMAFRIQ</p>
+                <p className="text-sm font-bold text-white">Afrilex Conseil</p>
                 <p className="text-[10px] text-white/35 uppercase tracking-wider">Bureau Interne</p>
               </div>
             </div>
@@ -132,7 +146,7 @@ export function DashboardLayout() {
               </div>
         <div className="mt-1 grid grid-cols-3 gap-1">
               <a href="/"
-                className="flex flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-2 text-[10px] text-white/30 hover:bg-white/[0.04] hover:text-white transition">
+                className="flex flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-2 text-[10px] text-white/55 hover:bg-white/[0.04] hover:text-white transition">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-3.5 w-3.5"><path d="M2 6.5L8 2l6 4.5V14H10v-4H6v4H2z"/></svg>
                 Site
               </a>
@@ -141,7 +155,7 @@ export function DashboardLayout() {
                 <SettingsIcon />Profil
               </NavLink>
               <button onClick={logout}
-                className="flex flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-2 text-[10px] text-white/40 hover:bg-red-500/10 hover:text-red-400 transition">
+                className="flex flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-2 text-[10px] text-white/40 hover:bg-coral/10 hover:text-coral transition">
                 <LogoutIcon />Déco.
               </button>
             </div>
@@ -189,3 +203,34 @@ function InboxIcon()  { return <svg className="h-4 w-4" fill="none" stroke="curr
 function SettingsIcon(){ return <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>; }
 function LogoutIcon() { return <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>; }
 function MenuIcon()   { return <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>; }
+function SparkIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/>
+    </svg>
+  );
+}
+function BriefcaseIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <rect x="2" y="7" width="20" height="14" rx="2" />
+      <path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16" />
+    </svg>
+  );
+}
+function PencilIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4L16.5 3.5z" />
+    </svg>
+  );
+}
+function MailIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="M22 6l-10 7L2 6" />
+    </svg>
+  );
+}

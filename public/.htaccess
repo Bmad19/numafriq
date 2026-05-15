@@ -1,17 +1,30 @@
-# ── NUMAFRIQ — SPA React Router ──────────────────────────────────────────────
+# ── Afrilex Conseil — SPA React Router (Apache / public_html / LWS-type) ─────
+# Important : ce fichier doit être à la racine du site avec index.html.
+
 Options -MultiViews
-RewriteEngine On
-RewriteBase /
+DirectoryIndex index.html
 
-# Servir directement les fichiers statiques (JS, CSS, images, fonts)
-RewriteRule \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|map|webp)$ - [L]
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
 
-# Ne pas réécrire si le fichier ou dossier existe réellement
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
+  # Laisser passer fichiers et dossiers réels (assets/, favicon, etc.)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
 
-# Tout le reste → index.html (React Router gère la navigation)
-RewriteRule ^ /index.html [QSA,L]
+  # WordPress REST : si WP est installé dans un sous-dossier (ex. /wordpress),
+  # décommentez et adaptez le chemin — sinon /wp-json est mangé par la SPA.
+  # RewriteRule ^wp-json(/.*)?$ /wordpress/wp-json$1 [L,QSA]
+
+  # Sinon → SPA (chemins relatifs ou absolus selon le build)
+  RewriteRule . index.html [L]
+</IfModule>
+
+<IfModule mod_mime.c>
+  AddType application/javascript js mjs
+  AddType text/css css
+</IfModule>
 
 # ── Cache long terme pour les assets hashés ───────────────────────────────────
 <IfModule mod_expires.c>

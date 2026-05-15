@@ -11,7 +11,7 @@ export function PricingPage() {
 
   return (
     <>
-      <Seo title={t("nav.tarifications")} description="NUMAFRIQ — Packs clairs, livrables précis et budgets adaptés." />
+      <Seo title={t("pricing.title")} description="Afrilex Conseil — Honoraires et modalités de mission du cabinet." />
       <HeroSlider slides={slides} />
       <div className="px-4 pb-24 sm:px-6 lg:px-8">
         <Pricing />

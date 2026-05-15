@@ -1,5 +1,7 @@
 // ── API Client Portal ────────────────────────────────────────────────────────
-const BASE = import.meta.env.VITE_CLIENT_API ?? '/api/client';
+import { readRuntimeEnv } from "../lib/runtimeEnv";
+
+const BASE = readRuntimeEnv("VITE_CLIENT_API", "/api/client");
 
 function getToken(): string | null { return localStorage.getItem('client_token'); }
 
@@ -11,14 +13,23 @@ async function request<T = unknown>(
 ): Promise<T> {
   const url = new URL(`${BASE}/${endpoint}`, window.location.origin);
   if (params) Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(url.toString(), {
+      method,
+      mode: 'cors',
+      credentials: 'omit',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new Error(
+      'API client injoignable (réseau ou CORS). Vérifiez VITE_CLIENT_API dans .env.production et CORS sur Render.',
+    );
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error ?? `Erreur ${res.status}`);
   return data as T;

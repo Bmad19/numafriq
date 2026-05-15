@@ -114,13 +114,13 @@ function db_init(): void {
         );
     ");
 
-    // Seed: super admin dinar (must change password on first login)
-    $exists = $db->query("SELECT COUNT(*) FROM users WHERE username='dinar'")->fetchColumn();
+    // Seed: super admin bureau Afrilex — sagnon / sagnon (à changer en production)
+    $exists = $db->query("SELECT COUNT(*) FROM users WHERE username='sagnon'")->fetchColumn();
     if (!$exists) {
-        $hash = password_hash('dinar', PASSWORD_BCRYPT, ['cost' => 12]);
+        $hash = password_hash('sagnon', PASSWORD_BCRYPT, ['cost' => 12]);
         $db->prepare("
             INSERT INTO users (username, password, full_name, email, role, first_login)
-            VALUES ('dinar', ?, 'Super Administrateur', 'admin@numafriq.com', 'super_admin', 1)
+            VALUES ('sagnon', ?, 'Administrateur Afrilex', 'cabinet@afrilexconseil.com', 'super_admin', 1)
         ")->execute([$hash]);
 
         // Demo data

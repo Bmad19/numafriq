@@ -1,0 +1,182 @@
+import type { Translations } from "./fr";
+
+const en: Translations = {
+  nav: {
+    home:          "Home",
+    services:      "Services",
+    realisations:  "Portfolio",
+    blog:          "Blog",
+    apropos:       "About",
+    contact:       "Contact",
+    cta:           "Start a project",
+  },
+
+  footer: {
+    tagline:    "Web agency & digital identity. We craft digital experiences that captivate and convert — for African and international brands.",
+    navigation: "Navigation",
+    contact:    "Contact",
+    reponse:    "Response within 24 business hours",
+    disponible: "Available for new projects",
+    mentions:   "Legal Notice",
+    politique:  "Privacy Policy",
+    droits:     "All rights reserved.",
+    tags: ["Strategy", "Web design", "SEO", "Acquisition"],
+  },
+
+  homeSlides: [
+    {
+      tag: "Digital presence",
+      eyebrow: "Website & brand image",
+      title: "A website that builds\ntrust and\nconverts.",
+      sub: "We design clear, reassuring, results-driven websites that strengthen your credibility and turn visitors into clients.",
+      cta: "Build my site",
+      ctaSecondary: "Our work",
+    },
+    {
+      tag: "Acquisition & SEO",
+      eyebrow: "SEO, content, acquisition",
+      title: "Be found by\nthose who need\nyou.",
+      sub: "Natural referencing, Ads campaigns and content strategy tailored to your market — in Africa and internationally.",
+      cta: "Boost my visibility",
+      ctaSecondary: "Our work",
+    },
+    {
+      tag: "UX & Growth",
+      eyebrow: "Design & differentiation",
+      title: "Stand out\nwith a design\nthat sells.",
+      sub: "Positioning, UX and conversion funnel designed to elevate your brand and defend your value against the competition.",
+      cta: "Start a project",
+      ctaSecondary: "Our work",
+    },
+  ],
+
+  home: {
+    needTitle:  "What do you need?",
+    need: [
+      {
+        title: "Exist on the web",
+        text:  "A premium showcase website that builds credibility, reassures prospects and highlights your expertise.",
+        cta:   "Build a website",
+      },
+      {
+        title: "Decode legal risks & compliance",
+        text:  "Curated posts from Afrilex Conseil: contracts, OHADA governance and practical guidance for leaders.",
+        cta:   "Explore the blog",
+      },
+      {
+        title: "Stand out for the long term",
+        text:  "Positioning, design and conversion funnel to break through and better defend your value.",
+        cta:   "See our work",
+      },
+    ],
+    valuesTag:   "Our values",
+    valuesTitle: "A clear, business-driven methodology",
+    valuesSub:   "A simple yet rigorous process, designed to deliver visible results.",
+    values: [
+      {
+        title: "Analyse & understand",
+        desc:  "We clarify your audience, objectives and pain points before producing anything.",
+      },
+      {
+        title: "Co-build with you",
+        desc:  "Every step is validated together: structure, design, content and key decisions.",
+      },
+      {
+        title: "Deliver & evolve",
+        desc:  "After launch, we monitor your performance to improve conversions and visibility.",
+      },
+    ],
+    refsTag:   "References",
+    refsTitle: "Organisations that trust us with their image and digital growth",
+    refsSub:   "We have worked with 130+ companies, from innovative startups to Pan-African institutions.",
+    refsLink:  "See all projects",
+    ctaTag:    "Ready to start?",
+    ctaTitle:  "Your website should help you sell, reassure and grow.",
+    ctaSub:    "Let's talk about your goals and build a clear, credible solution tailored to your African or international market.",
+    ctaBtn1:   "Launch my project",
+    ctaBtn2:   "Visit the blog",
+  },
+
+  services: {
+    eyebrow:  "What we do",
+    title:    "A 360° offer built for Africa and beyond",
+    sub:      "From strategy to acquisition, NUMAFRIQ builds complete, readable digital setups adapted to real-world conditions.",
+    approach: "Approach",
+    approachText: "A simple read of your needs, clear deliverables and execution designed to produce concrete results.",
+    cta:      "Ready to scope",
+  },
+
+  process: {
+    eyebrow: "Our method",
+    title:   "How we work",
+    sub:     "A clear and collaborative production process, inspired by the best African web agencies and adapted to your objectives.",
+    cta:     "Start now",
+    steps: [
+      { n: "01", title: "Audit & strategy",      desc: "Discovery workshop, market and competitor analysis. We define your business priorities and KPIs together." },
+      { n: "02", title: "UX & design prototype", desc: "Sitemap, wireframes and high-fidelity mockups validated step by step for a clear and persuasive experience." },
+      { n: "03", title: "Development & SEO",     desc: "Performant, responsive integration, technical SEO, analytics tracking and multi-device testing before launch." },
+      { n: "04", title: "Launch & acquisition",  desc: "Controlled launch, Google Business/Ads setup and initial acquisition plan to quickly generate results." },
+      { n: "05", title: "Ongoing monitoring",    desc: "Dashboard, maintenance, monthly optimisations and coaching to improve your performance over time." },
+    ],
+  },
+
+  about: {
+    eyebrow: "NUMAFRIQ",
+    title:   "An African web agency combining market proximity, visual excellence and business logic",
+    p1:      "NUMAFRIQ supports businesses, brands and ambitious organisations that want a more credible, readable and effective digital presence.",
+    points: [
+      "Strategic framing and transparent roadmap",
+      "Clean, readable execution aligned with your business priorities",
+      "Polished design, clear experience and measurable performance",
+    ],
+    distinguish:     "What sets us apart",
+    distinguishText: "A deep understanding of local realities, a premium visual language and a structured way of working that avoids vague, slow or disconnected projects.",
+    markets:    "Presence & markets served",
+    card: {
+      method:      "Method",
+      methodSub:   "Discovery → wireframes → design → integration → launch. You validate at every key step.",
+      slot:        "Next availability",
+      slotDate:    "April — June 2026",
+      position:    "Positioning",
+      positionText:"African web agency focused on impact, clarity and premium execution.",
+    },
+    stats: [
+      { n: "130+", l: "clients supported" },
+      { n: "170+", l: "digital projects" },
+      { n: "10+",  l: "countries covered" },
+    ],
+  },
+
+  blog: {
+    brand:             "Afrilex Conseil",
+    seoDescription:
+      "Legal insights, OHADA governance and practical tips from Afrilex Conseil's blog (Ouagadougou, Burkina Faso).",
+    heroEyebrow:       "Firm & counsel",
+    heroTitle:         "Afrilex Conseil blog",
+    heroDescription:
+      "Legal analysis synced from Afrilex: read here and join the conversation with comments below each article.",
+    sourceDisclaimer:
+      "Copy and visuals are synced from afrilexconseil.com (Afrilex's official website).",
+    sourceFooter:
+      "Content originates from afrilexconseil.com. Use “Open on afrilexconseil.com” for the canonical WordPress URL.",
+    ctaExplore:        "Browse articles",
+    ctaAfrilex:        "Source: afrilexconseil.com",
+    readArticle:      "Read on this site",
+    loadError:        "We couldn't load articles right now.",
+    retry:            "Try again",
+    empty:            "No articles are available.",
+    backToListing:    "All articles",
+    openOriginal:     "Open on afrilexconseil.com",
+    notFound:         "Article not found",
+    loadingArticle:  "Loading article…",
+
+    comments: {
+      title:             "Discussion",
+      subtitle:
+        "Comments shown on this site. Your email stays private — it helps limit spam.",
+      formTitle:         "Leave a comment",
+      name:              "Name / display name",
+      email:             "Email",
+      message:           "Your message",
+      hintModeration:
+        "Plain text only.

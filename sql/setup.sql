@@ -156,30 +156,64 @@ CREATE TABLE IF NOT EXISTS `client_messages` (
 
 -- ── Demandes projets (formulaire public "Démarrer un projet") ─────────────────
 CREATE TABLE IF NOT EXISTS `leads` (
-  `id`         INT AUTO_INCREMENT PRIMARY KEY,
-  `name`       VARCHAR(200)  NOT NULL,
-  `email`      VARCHAR(200)  NOT NULL,
-  `phone`      VARCHAR(100)  DEFAULT NULL,
-  `company`    VARCHAR(200)  DEFAULT NULL,
-  `service`    VARCHAR(200)  DEFAULT NULL,
-  `budget`     VARCHAR(100)  DEFAULT NULL,
-  `timeline`   VARCHAR(100)  DEFAULT NULL,
-  `message`    TEXT          NOT NULL,
-  `status`     ENUM('nouveau','vu','traite','archive') NOT NULL DEFAULT 'nouveau',
-  `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
+  `id`           INT AUTO_INCREMENT PRIMARY KEY,
+  `name`         VARCHAR(200)  NOT NULL,
+  `email`        VARCHAR(200)  NOT NULL,
+  `phone`        VARCHAR(100)  DEFAULT NULL,
+  `company`      VARCHAR(200)  DEFAULT NULL,
+  `service`      VARCHAR(200)  DEFAULT NULL,
+  `budget`       VARCHAR(100)  DEFAULT NULL,
+  `timeline`     VARCHAR(100)  DEFAULT NULL,
+  `message`      TEXT          NOT NULL,
+  `status`       ENUM('nouveau','en_cours','converti','perdu','archive') NOT NULL DEFAULT 'nouveau',
+  `assigned_to`  INT DEFAULT NULL,
+  `notes`        TEXT DEFAULT NULL,
+  `created_at`   DATETIME DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`   DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (`assigned_to`) REFERENCES `users`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS `job_applications` (
+  `id`                       INT AUTO_INCREMENT PRIMARY KEY,
+  `first_name`               VARCHAR(120)   NOT NULL,
+  `last_name`                VARCHAR(120)   NOT NULL,
+  `email`                    VARCHAR(200)   NOT NULL,
+  `phone`                    VARCHAR(100)   DEFAULT NULL,
+  `city_country`             VARCHAR(200)   DEFAULT NULL,
+  `linkedin_url`             VARCHAR(500)   DEFAULT NULL,
+  `position_applied`         VARCHAR(80)    NOT NULL,
+  `contract_type`            VARCHAR(40)    NOT NULL,
+  `availability`             VARCHAR(160)   DEFAULT NULL,
+  `experience_years`         VARCHAR(24)    DEFAULT NULL,
+  `education_level`          VARCHAR(48)    DEFAULT NULL,
+  `languages`                VARCHAR(400)   DEFAULT NULL,
+  `reference_offer`          VARCHAR(64)    DEFAULT NULL,
+  `sought_role_title`        VARCHAR(255)   DEFAULT NULL,
+  `application_mode`         VARCHAR(24)    DEFAULT NULL,
+  `motivation`               TEXT           NOT NULL,
+  `cv_original_name`         VARCHAR(255)   NOT NULL,
+  `cv_stored_path`           VARCHAR(500)   NOT NULL,
+  `locale`                   VARCHAR(8)     DEFAULT 'fr',
+  `consent_data_processing`  TINYINT(1)     NOT NULL DEFAULT 0,
+  `status`                   ENUM('nouveau','examine','entretien','refuse','embauche','archive')
+                             NOT NULL DEFAULT 'nouveau',
+  `created_at`               DATETIME       DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_job_app_email` (`email`),
+  INDEX `idx_job_app_status` (`status`),
+  INDEX `idx_job_app_created` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ══════════════════════════════════════════════════════════════════════════════
 -- DONNÉES INITIALES
 -- ══════════════════════════════════════════════════════════════════════════════
 
--- Super admin dinar (mot de passe : dinar — changement forcé à la 1ère connexion)
+-- Super admin bureau Afrilex (identifiant sagnon / mot de passe sagnon — à changer en production)
 INSERT IGNORE INTO `users` (`username`, `password`, `full_name`, `email`, `role`, `first_login`)
 VALUES (
-  'dinar',
-  '$2y$12$n5G8zYnGHxg0p8mJ6LvqcOv8jIGvRDQxKj9szL3UmZ1l0lY2YWD4G',
-  'Super Administrateur',
-  'admin@numafriq.com',
+  'sagnon',
+  '$2b$12$fUcTgRI7dYuKENwO6Q4wueW4nLJOrMYI5WstZFJknkfpynZZTR0Wu',
+  'Administrateur Afrilex',
+  'cabinet@afrilexconseil.com',
   'super_admin',
   1
 );

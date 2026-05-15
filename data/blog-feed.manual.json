@@ -1,0 +1,37 @@
+{
+  "posts": [
+    {
+      "id": 91001,
+      "slug": "le-contrat",
+      "title": "Le contrat : sans contrat, pas de business sûr",
+      "excerptPlain": "Pourquoi ce document peut sauver (ou couler) votre activité. La confiance et le cadre juridique durable dans les affaires en Afrique.",
+      "link": "https://afrilexconseil.com/le-contrat/",
+      "date": "2025-11-08T09:00:00",
+      "featuredImageUrl": null,
+      "categories": ["Contrats", "Droit des affaires"],
+      "contentHtml": "<p>Le contrat reste l’outil central pour sécuriser les échanges commerciaux : il fixe les obligations, les responsabilités et les modalités de résolution des différends. Sans document clair, les parties s’exposent à des interprétations divergentes et à des pertes difficiles à réparer.</p><p>Afrilex Conseil accompagne les entreprises pour rédiger, analyser et renégocier des contrats adaptés à votre secteur et au droit applicable, y compris dans l’espace OHADA.</p><p><a href=\"https://afrilexconseil.com/le-contrat/\" target=\"_blank\" rel=\"noopener noreferrer\">Lire l’article complet sur afrilexconseil.com →</a></p>"
+    },
+    {
+      "id": 91002,
+      "slug": "conformite-levier-strategique",
+      "title": "Conformité & stratégie : la conformité comme levier pour les entreprises",
+      "excerptPlain": "Au-delà de la contrainte, la conformité peut devenir un facteur de crédibilité, d’accès au marché et de relation de confiance avec les partenaires et les autorités.",
+      "link": "https://afrilexconseil.com/blog/",
+      "date": "2025-10-22T09:00:00",
+      "featuredImageUrl": null,
+      "categories": ["Conformité", "Stratégie"],
+      "contentHtml": "<p>De nombreux dirigeants associent encore la conformité à une charge administrative. Pourtant, lorsqu’elle est anticipée et intégrée à la gouvernance, elle réduit les risques, clarifie les processus et renforce la réputation de l’organisation.</p><p>Le cabinet propose une lecture pragmatique : aligner exigences légales, fiscalité et objectifs business, pour que la conformité serve la performance et non l’inverse.</p><p><a href=\"https://afrilexconseil.com/blog/\" target=\"_blank\" rel=\"noopener noreferrer\">Voir les publications sur afrilexconseil.com →</a></p>"
+    },
+    {
+      "id": 91003,
+      "slug": "gouvernance-ohada-dirigeants",
+      "title": "Gouvernance OHADA : un enjeu stratégique pour les dirigeants",
+      "excerptPlain": "Gouvernance d’entreprise dans l’espace OHADA : exigences, bonnes pratiques et sécurisation de la direction au regard du droit uniforme.",
+      "link": "https://afrilexconseil.com/blog/",
+      "date": "2025-09-15T09:00:00",
+      "featuredImageUrl": null,
+      "categories": ["OHADA", "Gouvernance"],
+      "contentHtml": "<p>L’harmonisation juridique OHADA impose des standards de transparence et de documentation que les organes de direction doivent maîtriser. Une gouvernance floue expose les sociétés, les actionnaires et les mandataires sociaux à des litiges coûteux.</p><p>Afrilex Conseil assiste les structures pour structurer les instances, les pactes d’associés et le reporting, en lien avec les réformes et la jurisprudence de la Cour commune de justice et d’arbitrage.</p><p><a href=\"https://afrilexconseil.com/blog/\" target=\"_blank\" rel=\"noopener noreferrer\">Voir les publications sur afrilexconseil.com →</a></p>"
+    }
+  ]
+}

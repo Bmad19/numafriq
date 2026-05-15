@@ -10,7 +10,8 @@ i18n
       fr: { translation: fr },
       en: { translation: en },
     },
-    lng: localStorage.getItem("numafriq_lang") ?? "fr",
+    // Uniquement la clé Afrilex : évite d’hériter EN/FR du site NUMAFRIQ (`numafriq_lang`) par erreur.
+    lng: localStorage.getItem("afrilex_lang") ?? "fr",
     fallbackLng: "fr",
     interpolation: { escapeValue: false },
   });
