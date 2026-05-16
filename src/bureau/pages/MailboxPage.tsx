@@ -87,6 +87,8 @@ export function MailboxPage() {
   const [form, setForm] = useState<MailboxAccountInput>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [testingSmtp, setTestingSmtp] = useState(false);
+  const [downloadingAttachIdx, setDownloadingAttachIdx] = useState<number | null>(null);
 
   const [composeOpen, setComposeOpen] = useState(false);
   const [compose, setCompose] = useState<ComposeState>(EMPTY_COMPOSE);
@@ -212,6 +214,39 @@ export function MailboxPage() {
       alert(e instanceof Error ? e.message : "Erreur");
     } finally {
       setTesting(false);
+    }
+  }
+
+  async function testSmtp() {
+    if (!editingAccountId) {
+      alert("Enregistrez d'abord le compte avant de tester.");
+      return;
+    }
+    setTestingSmtp(true);
+    try {
+      const r = await mailboxApi.testSmtp(editingAccountId);
+      const lines = r.results.map((x) =>
+        `  ${x.ok ? "✅" : "❌"} ${x.host ?? r.host}:${x.port} (${x.secure ? "SSL" : "STARTTLS"}) — ${x.ms}ms${x.error ? `\n     → ${x.error}` : ""}`,
+      ).join("\n");
+      alert(`Test SMTP — ${r.host}\n\n${lines}\n\n${r.recommendation}`);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setTestingSmtp(false);
+    }
+  }
+
+  async function downloadAttachment(idx: number) {
+    if (!openMessage || activeId == null) return;
+    const att = openMessage.attachments?.[idx];
+    if (!att) return;
+    setDownloadingAttachIdx(idx);
+    try {
+      await mailboxApi.openAttachment(activeId, openMessage.uid, idx, att.filename);
+    } catch (e: unknown) {
+      alert(`Téléchargement impossible : ${e instanceof Error ? e.message : "erreur"}`);
+    } finally {
+      setDownloadingAttachIdx(null);
     }
   }
 
@@ -518,13 +553,27 @@ export function MailboxPage() {
                           {openMessage.attachments.length} pièce{openMessage.attachments.length > 1 ? "s" : ""} jointe{openMessage.attachments.length > 1 ? "s" : ""}
                         </p>
                         <div className="flex flex-wrap gap-2">
-                          {openMessage.attachments.map((att, i) => (
-                            <div key={`${att.filename}-${i}`} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/80">
-                              <span>📎</span>
-                              <span className="truncate max-w-[180px]" title={att.filename}>{att.filename}</span>
-                              <span className="text-white/45">{fmtSize(att.size)}</span>
-                            </div>
-                          ))}
+                          {openMessage.attachments.map((att, i) => {
+                            const isLoading = downloadingAttachIdx === i;
+                            return (
+                              <button
+                                key={`${att.filename}-${i}`}
+                                onClick={() => downloadAttachment(i)}
+                                disabled={isLoading}
+                                className="group flex items-center gap-2 rounded-lg border border-violet/25 bg-violet/[0.08] px-3 py-1.5 text-xs text-white/85 hover:bg-violet/[0.18] hover:border-violet/40 transition disabled:opacity-50"
+                                title={`Télécharger ${att.filename} (${att.contentType})`}
+                              >
+                                {isLoading ? (
+                                  <span className="inline-block h-3 w-3 animate-spin rounded-full border border-violet/40 border-t-violet" />
+                                ) : (
+                                  <span>📎</span>
+                                )}
+                                <span className="truncate max-w-[180px]" title={att.filename}>{att.filename}</span>
+                                <span className="text-white/45 whitespace-nowrap">{fmtSize(att.size)}</span>
+                                <span className="text-violet/85 group-hover:text-violet ml-1">↓</span>
+                              </button>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -626,9 +675,14 @@ export function MailboxPage() {
                   Annuler
                 </button>
                 {accountModal === "edit" && (
-                  <button onClick={testConnection} disabled={testing} className="flex-1 rounded-xl border border-violet/20 bg-violet/10 py-3 text-sm font-bold text-violet hover:bg-violet/20 transition disabled:opacity-40">
-                    {testing ? "Test…" : "Tester IMAP"}
-                  </button>
+                  <>
+                    <button onClick={testConnection} disabled={testing} className="rounded-xl border border-violet/20 bg-violet/10 px-4 py-3 text-sm font-bold text-violet hover:bg-violet/20 transition disabled:opacity-40">
+                      {testing ? "…" : "Tester IMAP"}
+                    </button>
+                    <button onClick={testSmtp} disabled={testingSmtp} className="rounded-xl border border-lime/25 bg-lime/10 px-4 py-3 text-sm font-bold text-lime hover:bg-lime/20 transition disabled:opacity-40">
+                      {testingSmtp ? "…" : "Tester SMTP"}
+                    </button>
+                  </>
                 )}
                 <button onClick={saveAccount} disabled={saving} className="flex-1 rounded-xl bg-coral py-3 text-sm font-bold text-white hover:brightness-110 transition disabled:opacity-40">
                   {saving ? "Enregistrement…" : (accountModal === "create" ? "Créer le compte" : "Enregistrer")}

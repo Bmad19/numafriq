@@ -514,9 +514,50 @@ export const mailboxApi = {
     html?: string;
     in_reply_to?: string;
   }) =>
-    request<{ success: boolean; messageId?: string; accepted?: string[]; rejected?: string[] }>(
+    request<{ success: boolean; messageId?: string; accepted?: string[]; rejected?: string[]; attempted?: Array<{ port: number; secure: boolean; ok: boolean; error?: string }> }>(
       'mailbox.php', 'POST', payload, { action: 'send', id: String(id) },
     ),
+  testSmtp: (id: number) =>
+    request<{
+      success: boolean;
+      host: string;
+      results: Array<{ port: number; secure: boolean; ok: boolean; ms: number; error?: string }>;
+      recommendation: string;
+    }>('mailbox.php', 'POST', undefined, { action: 'test_smtp', id: String(id) }),
+  /** Télécharge une pièce jointe (auth via header → blob URL → ouvre nouvel onglet). */
+  openAttachment: async (
+    accountId: number,
+    uid: number,
+    idx: number,
+    suggestedName?: string,
+    folder?: string,
+  ): Promise<void> => {
+    const url = new URL(`${BASE}/mailbox.php`, window.location.origin);
+    url.searchParams.set('action', 'attachment');
+    url.searchParams.set('id', String(accountId));
+    url.searchParams.set('uid', String(uid));
+    url.searchParams.set('idx', String(idx));
+    if (folder) url.searchParams.set('folder', folder);
+    const token = localStorage.getItem('bureau_token') ?? '';
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) {
+      const t = await res.text().catch(() => '');
+      throw new Error(t || `Erreur ${res.status}`);
+    }
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const win = window.open(blobUrl, '_blank', 'noopener,noreferrer');
+    if (!win) {
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = suggestedName || `piece-jointe-${idx + 1}`;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  },
 };
 
 // ── Articles blog (publication depuis le bureau) ─────────────────────────────

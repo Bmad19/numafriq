@@ -2220,6 +2220,88 @@ app.all('/api/bureau/mailbox.php', async (req, res) => {
       }
     }
 
+    if (action === 'attachment' && req.method === 'GET') {
+      // Télécharge une pièce jointe d'un message — re-fetch + reparse pour récupérer le binaire.
+      const accountId = +id;
+      const uid = parseInt(String(req.query.uid ?? ''), 10);
+      const idx = parseInt(String(req.query.idx ?? '0'), 10);
+      if (!Number.isFinite(uid)) return res.status(400).send('uid requis');
+      if (!simpleParser) return res.status(503).send('Module mailparser absent');
+      const account = await loadMailboxAccount(accountId, true);
+      if (!account) return res.status(404).send('Compte introuvable');
+      const folder = (req.query.folder && String(req.query.folder).trim()) || 'INBOX';
+      try {
+        const att = await withImapClient(account, async (client) => {
+          const lock = await client.getMailboxLock(folder);
+          try {
+            const m = await client.fetchOne(String(uid), { uid: true, source: true }, { uid: true });
+            if (!m || !m.source) return null;
+            const parsed = await simpleParser(m.source);
+            const list = (parsed.attachments || []).filter((a) => !a.related);
+            return list[idx] || null;
+          } finally {
+            lock.release();
+          }
+        }, { timeoutMs: 30000 });
+        if (!att) return res.status(404).send('Pièce jointe introuvable');
+        const buf = Buffer.isBuffer(att.content) ? att.content : Buffer.from(att.content || '');
+        const filename = (att.filename || `piece-${idx + 1}`).replace(/[\r\n"]/g, '_');
+        res.set({
+          'Content-Type': att.contentType || 'application/octet-stream',
+          'Content-Length': String(buf.length),
+          'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+          'Cache-Control': 'no-store, private',
+        });
+        return res.end(buf);
+      } catch (e) {
+        return res.status(502).send(String(e?.message || e));
+      }
+    }
+
+    if (action === 'test_smtp' && req.method === 'POST') {
+      // Diagnostic : tente d'établir la connexion SMTP sans envoyer de mail.
+      // Renvoie le détail de chaque essai (port, secure, ok/error).
+      if (!nodemailer) return res.status(503).json({ error: 'nodemailer absent' });
+      const accountId = +id;
+      const account = await loadMailboxAccount(accountId, true);
+      if (!account) return res.status(404).json({ error: 'Compte introuvable' });
+      const baseHost = account.smtp_host || account.imap_host;
+      const declared = { port: account.smtp_port ?? 465, secure: account.smtp_secure ?? true };
+      const altPort = declared.port === 465 ? 587 : (declared.port === 587 ? 465 : null);
+      const tests = [declared];
+      if (altPort) tests.push({ port: altPort, secure: altPort === 465 });
+      tests.push({ port: 25, secure: false });
+      const results = [];
+      let firstOk = null;
+      for (const t of tests) {
+        const transporter = nodemailer.createTransport({
+          host: baseHost, port: t.port, secure: t.secure, requireTLS: !t.secure,
+          auth: { user: account.email, pass: decryptSecret(account.password_enc) },
+          connectionTimeout: 10000, greetingTimeout: 8000, socketTimeout: 12000,
+          tls: { rejectUnauthorized: false },
+        });
+        const start = Date.now();
+        try {
+          await transporter.verify();
+          const ms = Date.now() - start;
+          results.push({ ...t, ok: true, ms });
+          if (!firstOk) firstOk = t;
+        } catch (e) {
+          results.push({ ...t, ok: false, ms: Date.now() - start, error: String(e?.message || e).slice(0, 200) });
+        } finally {
+          try { transporter.close(); } catch { /* ignore */ }
+        }
+      }
+      return res.json({
+        success: !!firstOk,
+        host: baseHost,
+        results,
+        recommendation: firstOk
+          ? `✅ Port ${firstOk.port} (${firstOk.secure ? 'SSL' : 'STARTTLS'}) fonctionne. Configurez ce port dans le compte mail.`
+          : "❌ Aucun port SMTP joignable depuis Render. Render free tier bloque parfois SMTP — solution : utiliser un relais transactionnel (Resend, Mailgun, Brevo) avec API HTTPS, OU passer en plan payant Render ($7/mois).",
+      });
+    }
+
     if (action === 'send' && req.method === 'POST') {
       if (!nodemailer) return res.status(503).json({ error: 'Module nodemailer absent — npm install nodemailer.' });
       const accountId = +id;
@@ -2373,9 +2455,14 @@ async function sendViaSmtpResilient(account, mail) {
   let raw = null;
   try { raw = await buildRawMessage(composed); } catch { /* fallback : sendMail composera lui-même */ }
 
+  // Stratégie : port déclaré → alt (465↔587) → port 25 STARTTLS (dernier recours).
+  // Render free tier bloque parfois 465 ; 587 marche le plus souvent ; 25 est le fallback ultime.
   const tries = [{ port: declaredPort, secure: declaredSecure }];
   const altPort = declaredPort === 465 ? 587 : (declaredPort === 587 ? 465 : null);
   if (altPort) tries.push({ port: altPort, secure: altPort === 465 });
+  if (![25, 465, 587].includes(declaredPort) || (declaredPort !== 25 && altPort !== 25)) {
+    tries.push({ port: 25, secure: false });
+  }
 
   let lastErr = null;
   for (const t of tries) {
