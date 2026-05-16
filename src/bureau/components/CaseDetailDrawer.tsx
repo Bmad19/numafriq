@@ -2,10 +2,16 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   casesApi,
+  clientsApi,
   type CaseDetail,
   type CaseMilestone,
   type CaseEvent,
   type CaseDocument,
+  type CaseInvoice,
+  type CasePayment,
+  type CaseEventRequest,
+  type CaseActivity,
+  type ClientAccount,
 } from "../api";
 import { useAuth, hasRole } from "../BureauContext";
 
@@ -79,7 +85,41 @@ function fileToB64(file: File): Promise<{ data_base64: string; mime: string; fil
   });
 }
 
-type Tab = "overview" | "milestones" | "events" | "documents" | "clients";
+type Tab = "overview" | "milestones" | "events" | "documents" | "invoices" | "activities" | "clients";
+
+const INVOICE_STATUS: Record<CaseInvoice["status"], { l: string; cls: string }> = {
+  brouillon:           { l: "Brouillon",       cls: "border-white/15 bg-white/[0.04] text-white/55" },
+  envoyee:             { l: "Envoyée",         cls: "border-coral/30 bg-coral/12 text-coral" },
+  partiellement_payee: { l: "Partiel.",        cls: "border-violet/30 bg-violet/12 text-violet" },
+  payee:               { l: "Payée",           cls: "border-lime/30 bg-lime/15 text-lime" },
+  annulee:             { l: "Annulée",         cls: "border-white/10 bg-white/[0.02] text-white/40 line-through" },
+};
+
+const PAYMENT_METHODS: Record<CasePayment["method"], string> = {
+  especes: "Espèces", virement: "Virement", mobile_money: "Mobile Money", cheque: "Chèque", carte: "Carte", autre: "Autre",
+};
+
+const ACTIVITY_KIND_LABELS: Record<CaseActivity["kind"], { l: string; icon: string }> = {
+  consultation: { l: "Consultation", icon: "💬" },
+  redaction:    { l: "Rédaction",    icon: "✍️" },
+  audience:     { l: "Audience",     icon: "⚖️" },
+  recherche:    { l: "Recherche",    icon: "🔎" },
+  rdv:          { l: "Rendez-vous",  icon: "📅" },
+  expertise:    { l: "Expertise",    icon: "📋" },
+  telephone:    { l: "Téléphone",    icon: "📞" },
+  email:        { l: "Email",        icon: "✉️" },
+  autre:        { l: "Autre",        icon: "📌" },
+};
+
+const fmtMoney = (n?: number | null, currency = "XOF") => {
+  if (n == null || !Number.isFinite(n)) return "—";
+  return `${Math.round(n).toLocaleString("fr-FR")} ${currency === "XOF" ? "FCFA" : currency}`;
+};
+const fmtDuration = (mins: number) => {
+  if (!mins) return "0 min";
+  const h = Math.floor(mins / 60); const m = mins % 60;
+  return h > 0 ? `${h}h${m ? String(m).padStart(2, "0") : ""}` : `${m} min`;
+};
 
 export function CaseDetailDrawer({ projectId, onClose, onChange }: {
   projectId: number | null;
@@ -189,6 +229,8 @@ export function CaseDetailDrawer({ projectId, onClose, onChange }: {
                 { v: "milestones", l: "Étapes",         n: data?.milestones.length ?? 0 },
                 { v: "events",     l: "Audiences/RDV",  n: data?.events.length ?? 0 },
                 { v: "documents",  l: "Documents",      n: data?.documents.length ?? 0 },
+                { v: "invoices",   l: "Honoraires",     n: null },
+                { v: "activities", l: "Diligences",     n: null },
                 { v: "clients",    l: "Clients",        n: data?.clients.length ?? 0 },
               ] as const).map((t) => (
                 <button key={t.v} onClick={() => setTab(t.v as Tab)}
@@ -274,6 +316,14 @@ export function CaseDetailDrawer({ projectId, onClose, onChange }: {
               {data && tab === "documents" && (
                 <DocumentsPane data={data} isAdmin={isAdmin} onUpload={() => setDocModal(true)} onChanged={load}
                   onDownload={downloadDoc} downloadingId={downloadingDocId} />
+              )}
+
+              {data && tab === "invoices" && (
+                <InvoicesPane projectId={data.project.id} isAdmin={isAdmin} />
+              )}
+
+              {data && tab === "activities" && (
+                <ActivitiesPane projectId={data.project.id} isAdmin={isAdmin} />
               )}
 
               {data && tab === "clients" && (
@@ -370,14 +420,47 @@ function EventsPane({ data, isAdmin, onCreate, onEdit, onChanged }: {
 }) {
   const upcoming = useMemo(() => data.events.filter((e) => !e.completed_at), [data.events]);
   const past = useMemo(() => data.events.filter((e) => !!e.completed_at), [data.events]);
+  const [requests, setRequests] = useState<CaseEventRequest[]>([]);
+  const [decisionTarget, setDecisionTarget] = useState<CaseEventRequest | null>(null);
+
+  async function loadReqs() {
+    try { const list = await casesApi.eventRequestsList(data.project.id); setRequests(list); }
+    catch { setRequests([]); }
+  }
+  useEffect(() => { loadReqs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [data.project.id]);
+
+  const pendingReqs = requests.filter((r) => r.status === "pending");
+
   return (
     <div className="space-y-3">
       {isAdmin && (
         <div className="flex justify-between items-center">
-          <p className="text-sm text-white/55">Audiences, rendez-vous, échéances. Notifications WhatsApp envoyées automatiquement.</p>
+          <p className="text-sm text-white/55">Audiences, rendez-vous, échéances. Notifications email + WhatsApp automatiques.</p>
           <button onClick={onCreate} className="rounded-xl bg-coral px-4 py-2 text-xs font-bold text-white hover:brightness-110 transition">+ Nouvel événement</button>
         </div>
       )}
+
+      {pendingReqs.length > 0 && (
+        <div className="rounded-2xl border border-coral/35 bg-coral/[0.06] p-4 space-y-2">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-coral">⚠ {pendingReqs.length} demande{pendingReqs.length > 1 ? "s" : ""} de RDV client en attente</p>
+          {pendingReqs.map((r) => (
+            <div key={r.id} className="rounded-xl bg-white/[0.03] p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-white">{r.title}</p>
+                  <p className="text-xs text-white/65 mt-0.5">👤 {r.requester_name ?? "?"} ({r.requester_email})</p>
+                  <p className="text-xs text-white/65">🕒 Proposé : <strong className="text-white">{fmtDt(r.proposed_date)}</strong>{r.alternative_date && <span className="text-white/45"> · alt. : {fmtDt(r.alternative_date)}</span>}</p>
+                  {r.message && <p className="mt-1 text-xs text-white/60 italic">« {r.message} »</p>}
+                </div>
+                <button onClick={() => setDecisionTarget(r)} className="shrink-0 rounded-lg bg-coral px-3 py-1.5 text-xs font-bold text-white hover:brightness-110">⚖ Décider</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {decisionTarget && <EventRequestDecisionModal request={decisionTarget} onClose={() => setDecisionTarget(null)} onDecided={() => { setDecisionTarget(null); loadReqs(); onChanged(); }} />}
+
       {upcoming.length === 0 && past.length === 0 ? (
         <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] py-10 text-center text-sm text-white/45">Aucun événement programmé.</div>
       ) : (
@@ -397,6 +480,81 @@ function EventsPane({ data, isAdmin, onCreate, onEdit, onChanged }: {
         </>
       )}
     </div>
+  );
+}
+
+function EventRequestDecisionModal({ request, onClose, onDecided }: { request: CaseEventRequest; onClose: () => void; onDecided: () => void }) {
+  const [decision, setDecision] = useState<"accepted" | "rescheduled" | "refused">("accepted");
+  const [scheduledAt, setScheduledAt] = useState<string>("");
+  const [duration, setDuration] = useState(60);
+  const [location, setLocation] = useState("");
+  const [notesClient, setNotesClient] = useState("");
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  // Format date proposée pour le datetime-local par défaut
+  const proposedLocal = useMemo(() => new Date(request.proposed_date).toISOString().slice(0, 16), [request.proposed_date]);
+  useEffect(() => { setScheduledAt(proposedLocal); }, [proposedLocal]);
+  async function save() {
+    setSaving(true); setErr(null);
+    try {
+      const payload: Parameters<typeof casesApi.eventRequestDecide>[1] = { decision, message: message.trim() || undefined };
+      if (decision === "rescheduled") payload.scheduled_at = new Date(scheduledAt).toISOString();
+      if (decision !== "refused") {
+        payload.duration_minutes = duration;
+        if (location.trim()) payload.location = location.trim();
+        if (notesClient.trim()) payload.notes_client_facing = notesClient.trim();
+      }
+      await casesApi.eventRequestDecide(request.id, payload);
+      onDecided();
+    } catch (e: unknown) { setErr((e as Error).message); }
+    finally { setSaving(false); }
+  }
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto"
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="my-8 w-full max-w-md rounded-3xl border border-white/10 bg-[#0f1012] p-6 space-y-3 shadow-2xl">
+        <h3 className="font-display text-lg font-bold text-white">Décision sur la demande RDV</h3>
+        <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 text-xs text-white/70">
+          <p className="font-semibold text-white">{request.title}</p>
+          <p>Demandé par : {request.requester_name ?? "?"}</p>
+          <p>Date proposée : {fmtDt(request.proposed_date)}{request.alternative_date && ` (alt. ${fmtDt(request.alternative_date)})`}</p>
+          {request.message && <p className="mt-1 italic">« {request.message} »</p>}
+        </div>
+        <div>
+          <label className={lbl}>Décision *</label>
+          <div className="grid grid-cols-3 gap-1.5">
+            {[
+              { v: "accepted",    l: "Accepter",     cls: "border-lime/30 bg-lime/15 text-lime" },
+              { v: "rescheduled", l: "Reprogrammer", cls: "border-violet/30 bg-violet/15 text-violet" },
+              { v: "refused",     l: "Refuser",      cls: "border-coral/30 bg-coral/15 text-coral" },
+            ].map((o) => (
+              <button key={o.v} type="button" onClick={() => setDecision(o.v as typeof decision)}
+                className={`rounded-xl border px-3 py-2 text-xs font-bold transition ${decision === o.v ? o.cls : "border-white/10 bg-white/[0.02] text-white/55"}`}>{o.l}</button>
+            ))}
+          </div>
+        </div>
+        {decision === "rescheduled" && (
+          <div><label className={lbl}>Nouvelle date/heure *</label><input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} className={inp} /></div>
+        )}
+        {decision !== "refused" && (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <div><label className={lbl}>Durée (min)</label><input type="number" value={String(duration)} onChange={(e) => setDuration(+e.target.value)} className={inp} /></div>
+              <div><label className={lbl}>Lieu</label><input value={location} onChange={(e) => setLocation(e.target.value)} className={inp} placeholder="Cabinet — visio" /></div>
+            </div>
+            <div><label className={lbl}>Note pour le client</label><textarea rows={2} value={notesClient} onChange={(e) => setNotesClient(e.target.value)} className={inp + " resize-none"} placeholder="Pensez à apporter votre pièce d'identité." /></div>
+          </>
+        )}
+        <div><label className={lbl}>Message à transmettre au client</label><textarea rows={2} value={message} onChange={(e) => setMessage(e.target.value)} className={inp + " resize-none"} placeholder="Ex : Confirmé, à bientôt." /></div>
+        {err && <div className="rounded-xl border border-coral/35 bg-coral/10 px-3 py-2 text-xs text-coral">{err}</div>}
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} disabled={saving} className="flex-1 rounded-xl border border-white/10 py-2.5 text-sm text-white/55 hover:text-white">Annuler</button>
+          <button onClick={save} disabled={saving} className="flex-1 rounded-xl bg-coral py-2.5 text-sm font-bold text-white hover:brightness-110 disabled:opacity-50">{saving ? "…" : "Confirmer"}</button>
+        </div>
+      </div>
+    </motion.div>
   );
 }
 
@@ -497,12 +655,81 @@ function DocumentsPane({ data, isAdmin, onUpload, onChanged, onDownload, downloa
 }
 
 function ClientsPane({ data, isAdmin, onChanged }: { data: CaseDetail; isAdmin: boolean; onChanged: () => void }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [allClients, setAllClients] = useState<ClientAccount[]>([]);
+  const [search, setSearch] = useState("");
+  const [role, setRole] = useState("principal");
+  const [adding, setAdding] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (pickerOpen) {
+      clientsApi.listAll().then(setAllClients).catch(() => setAllClients([]));
+    }
+  }, [pickerOpen]);
+
+  const linkedIds = useMemo(() => new Set(data.clients.map((c) => c.id)), [data.clients]);
+  const candidates = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return allClients
+      .filter((c) => !linkedIds.has(c.id))
+      .filter((c) => !q || [c.name, c.email, c.company].some((v) => String(v ?? "").toLowerCase().includes(q)));
+  }, [allClients, linkedIds, search]);
+
+  async function attach(c: ClientAccount) {
+    setAdding(c.id);
+    try { await casesApi.attachClient(data.project.id, c.id, role); onChanged(); setPickerOpen(false); }
+    catch (e: unknown) { alert((e as Error).message); }
+    finally { setAdding(null); }
+  }
+
   return (
     <div className="space-y-3">
-      <p className="text-sm text-white/55">Clients liés à ce dossier (multi possible : associés, représentants, etc.).</p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-white/55">Clients liés à ce dossier (multi possible : associés, représentants, etc.).</p>
+        {isAdmin && (
+          <button onClick={() => setPickerOpen((v) => !v)}
+            className="rounded-xl bg-coral px-4 py-2 text-xs font-bold text-white hover:brightness-110 transition">
+            {pickerOpen ? "Fermer" : "+ Lier un client"}
+          </button>
+        )}
+      </div>
+
+      {pickerOpen && (
+        <div className="rounded-2xl border border-coral/25 bg-coral/[0.04] p-4 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2">
+            <input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher un client par nom, email, entreprise…"
+              className={inp} />
+            <select value={role} onChange={(e) => setRole(e.target.value)} className={inp}>
+              <option value="principal">Principal</option>
+              <option value="co-mandant">Co-mandant</option>
+              <option value="representant">Représentant</option>
+              <option value="autre">Autre</option>
+            </select>
+          </div>
+          <div className="max-h-64 overflow-y-auto styled-scrollbar space-y-1">
+            {candidates.length === 0 ? (
+              <p className="text-xs text-white/45 italic py-3 text-center">
+                {allClients.length === 0 ? "Chargement…" : "Aucun client trouvé. Le client doit d'abord créer son compte sur /client."}
+              </p>
+            ) : candidates.slice(0, 50).map((c) => (
+              <button key={c.id} onClick={() => attach(c)} disabled={adding === c.id}
+                className="w-full text-left rounded-xl border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05] p-3 flex items-center gap-3 transition disabled:opacity-50">
+                <div className="shrink-0 h-8 w-8 rounded-full bg-gradient-to-br from-lime/30 to-violet/30 flex items-center justify-center text-xs font-bold text-white">{c.name.charAt(0).toUpperCase()}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">{c.name}</p>
+                  <p className="text-[11px] text-white/50 truncate">{c.email}{c.company ? ` · ${c.company}` : ""}</p>
+                </div>
+                <span className="shrink-0 text-xs font-bold text-coral">{adding === c.id ? "…" : "+ Lier"}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {data.clients.length === 0 ? (
         <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] py-10 text-center text-sm text-white/45">
-          Aucun client lié à ce dossier. Liez-le depuis la page « Messages clients » ou créez le compte client puis rattachez-le ici.
+          Aucun client lié à ce dossier. Cliquez « + Lier un client » ci-dessus pour rattacher un compte client existant.
         </div>
       ) : (
         <ul className="space-y-2">
@@ -525,6 +752,336 @@ function ClientsPane({ data, isAdmin, onChanged }: { data: CaseDetail; isAdmin: 
         </ul>
       )}
     </div>
+  );
+}
+
+// ── INVOICES PANE ────────────────────────────────────────────────────────────
+function InvoicesPane({ projectId, isAdmin }: { projectId: number; isAdmin: boolean }) {
+  const [invoices, setInvoices] = useState<CaseInvoice[]>([]);
+  const [payments, setPayments] = useState<CasePayment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<CaseInvoice | "new" | null>(null);
+  const [paymentTarget, setPaymentTarget] = useState<CaseInvoice | null>(null);
+
+  async function load() {
+    setLoading(true);
+    try { const r = await casesApi.invoicesList(projectId); setInvoices(r.invoices); setPayments(r.payments); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [projectId]);
+
+  const totals = useMemo(() => {
+    const totalEmis = invoices.filter((i) => i.status !== "annulee" && i.status !== "brouillon").reduce((s, i) => s + Number(i.amount), 0);
+    const totalPaye = invoices.filter((i) => i.status !== "annulee").reduce((s, i) => s + Number(i.paid_amount || 0), 0);
+    const totalDu = totalEmis - totalPaye;
+    return { totalEmis, totalPaye, totalDu };
+  }, [invoices]);
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/45">Émis</p>
+          <p className="font-display text-lg font-extrabold text-white">{fmtMoney(totals.totalEmis)}</p>
+        </div>
+        <div className="rounded-xl border border-lime/20 bg-lime/[0.04] p-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-lime/85">Encaissé</p>
+          <p className="font-display text-lg font-extrabold text-lime">{fmtMoney(totals.totalPaye)}</p>
+        </div>
+        <div className={`rounded-xl border p-3 ${totals.totalDu > 0 ? "border-coral/30 bg-coral/[0.06]" : "border-white/[0.08] bg-white/[0.02]"}`}>
+          <p className={`text-[10px] font-bold uppercase tracking-widest ${totals.totalDu > 0 ? "text-coral" : "text-white/45"}`}>Solde dû</p>
+          <p className={`font-display text-lg font-extrabold ${totals.totalDu > 0 ? "text-coral" : "text-white"}`}>{fmtMoney(totals.totalDu)}</p>
+        </div>
+      </div>
+
+      {isAdmin && (
+        <div className="flex justify-end">
+          <button onClick={() => setEditing("new")} className="rounded-xl bg-coral px-4 py-2 text-xs font-bold text-white hover:brightness-110">+ Nouvelle facture</button>
+        </div>
+      )}
+
+      {loading ? <div className="text-center text-white/45 py-6">Chargement…</div> :
+        invoices.length === 0 ? (
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] py-10 text-center text-sm text-white/45">
+            Aucune facture émise pour ce dossier.
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {invoices.map((inv) => {
+              const cfg = INVOICE_STATUS[inv.status];
+              const invPayments = payments.filter((p) => p.invoice_id === inv.id);
+              const due = Number(inv.amount) - Number(inv.paid_amount || 0);
+              const overdue = inv.due_date && inv.status !== "payee" && inv.status !== "annulee" && new Date(inv.due_date) < new Date();
+              return (
+                <li key={inv.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 space-y-2">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        {inv.invoice_number && <span className="rounded-md bg-violet/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-violet">{inv.invoice_number}</span>}
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${cfg.cls}`}>{cfg.l}</span>
+                        {!inv.visible_to_client && <span className="text-[10px] text-violet/85 font-bold uppercase">🔒 Interne</span>}
+                        {overdue && <span className="text-[10px] text-coral font-bold uppercase">⚠ Échue</span>}
+                      </div>
+                      <p className="font-semibold text-white">{inv.title}</p>
+                      {inv.description && <p className="text-xs text-white/55 mt-0.5">{inv.description}</p>}
+                      <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-white/50">
+                        <span>💰 <strong className="text-white">{fmtMoney(inv.amount, inv.currency)}</strong></span>
+                        {inv.paid_amount > 0 && <span className="text-lime/85">✓ Payé : {fmtMoney(inv.paid_amount, inv.currency)}</span>}
+                        {due > 0 && <span className="text-coral/85">Reste : {fmtMoney(due, inv.currency)}</span>}
+                        {inv.due_date && <span>📅 Échéance : {fmt(inv.due_date)}</span>}
+                      </div>
+                    </div>
+                    {isAdmin && (
+                      <div className="shrink-0 flex flex-col gap-1">
+                        {(inv.status === "envoyee" || inv.status === "partiellement_payee") && (
+                          <button onClick={() => setPaymentTarget(inv)}
+                            className="rounded-lg border border-lime/30 bg-lime/12 px-2.5 py-1 text-[10px] font-bold text-lime hover:bg-lime/20">+ Paiement</button>
+                        )}
+                        <button onClick={() => setEditing(inv)}
+                          className="rounded-lg border border-white/10 px-2.5 py-1 text-[10px] font-semibold text-white/60 hover:text-white">✎</button>
+                        <button onClick={async () => { if (confirm("Supprimer cette facture ?")) { await casesApi.invoiceDelete(inv.id); load(); } }}
+                          className="rounded-lg text-white/45 hover:text-coral text-[10px] px-2 py-1 hover:bg-coral/10">🗑</button>
+                      </div>
+                    )}
+                  </div>
+                  {invPayments.length > 0 && (
+                    <details className="text-[11px] text-white/55">
+                      <summary className="cursor-pointer text-lime/75 hover:text-lime">▸ {invPayments.length} paiement{invPayments.length > 1 ? "s" : ""}</summary>
+                      <ul className="mt-2 space-y-1">
+                        {invPayments.map((p) => (
+                          <li key={p.id} className="flex items-center justify-between rounded-lg bg-white/[0.03] px-3 py-1.5">
+                            <span>{fmt(p.paid_at)} — {fmtMoney(Number(p.amount))} ({PAYMENT_METHODS[p.method]}{p.reference ? ` · ${p.reference}` : ""})</span>
+                            {isAdmin && (
+                              <button onClick={async () => { if (confirm("Supprimer ce paiement ?")) { await casesApi.paymentDelete(p.id); load(); } }}
+                                className="text-coral/65 hover:text-coral text-xs">×</button>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+      {editing && <InvoiceModal projectId={projectId} invoice={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={load} />}
+      {paymentTarget && <PaymentModal invoice={paymentTarget} onClose={() => setPaymentTarget(null)} onSaved={() => { setPaymentTarget(null); load(); }} />}
+    </div>
+  );
+}
+
+function InvoiceModal({ projectId, invoice, onClose, onSaved }: { projectId: number; invoice: CaseInvoice | null; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState<Partial<CaseInvoice>>({
+    invoice_number: "", title: "", description: "", amount: 0, currency: "XOF", status: "brouillon",
+    due_date: "", notes_internal: "", notes_client: "", visible_to_client: true,
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { if (invoice) setForm(invoice); }, [invoice]);
+  async function save() {
+    if (!form.title?.trim()) return setErr("Titre requis");
+    setSaving(true);
+    try {
+      if (invoice) await casesApi.invoiceUpdate(invoice.id, form);
+      else await casesApi.invoiceCreate(projectId, form);
+      onSaved(); onClose();
+    } catch (e: unknown) { setErr((e as Error).message); }
+    finally { setSaving(false); }
+  }
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto"
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="my-8 w-full max-w-md rounded-3xl border border-white/10 bg-[#0f1012] p-6 space-y-3 shadow-2xl">
+        <h3 className="font-display text-lg font-bold text-white">{invoice ? "Modifier facture" : "Nouvelle facture"}</h3>
+        <div className="grid grid-cols-2 gap-2">
+          <div><label className={lbl}>N° facture</label><input value={form.invoice_number ?? ""} onChange={(e) => setForm((f) => ({ ...f, invoice_number: e.target.value }))} className={inp} placeholder="FAC-2026-001" /></div>
+          <div><label className={lbl}>Devise</label><select value={form.currency ?? "XOF"} onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))} className={inp}><option value="XOF">FCFA (XOF)</option><option value="EUR">EUR</option><option value="USD">USD</option></select></div>
+        </div>
+        <div><label className={lbl}>Intitulé *</label><input value={form.title ?? ""} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} className={inp} placeholder="Honoraires plaidoirie" /></div>
+        <div className="grid grid-cols-2 gap-2">
+          <div><label className={lbl}>Montant TTC</label><input type="number" value={String(form.amount ?? 0)} onChange={(e) => setForm((f) => ({ ...f, amount: +e.target.value }))} className={inp} /></div>
+          <div><label className={lbl}>Échéance</label><input type="date" value={form.due_date ?? ""} onChange={(e) => setForm((f) => ({ ...f, due_date: e.target.value }))} className={inp} /></div>
+        </div>
+        <div><label className={lbl}>Statut</label><select value={form.status ?? "brouillon"} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value as CaseInvoice["status"] }))} className={inp}>{Object.entries(INVOICE_STATUS).map(([v, c]) => <option key={v} value={v}>{c.l}</option>)}</select></div>
+        <div><label className={lbl}>Description</label><textarea rows={2} value={form.description ?? ""} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} className={inp + " resize-none"} /></div>
+        <div><label className={lbl}>Note client (visible)</label><textarea rows={2} value={form.notes_client ?? ""} onChange={(e) => setForm((f) => ({ ...f, notes_client: e.target.value }))} className={inp + " resize-none"} /></div>
+        <label className="flex items-center gap-2 text-sm text-white/80"><input type="checkbox" checked={form.visible_to_client !== false} onChange={(e) => setForm((f) => ({ ...f, visible_to_client: e.target.checked }))} className="h-4 w-4 rounded border-white/20" />Visible client</label>
+        {err && <div className="rounded-xl border border-coral/35 bg-coral/10 px-3 py-2 text-xs text-coral">{err}</div>}
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} disabled={saving} className="flex-1 rounded-xl border border-white/10 py-2.5 text-sm text-white/55 hover:text-white">Annuler</button>
+          <button onClick={save} disabled={saving} className="flex-1 rounded-xl bg-coral py-2.5 text-sm font-bold text-white hover:brightness-110 disabled:opacity-50">{saving ? "…" : "Enregistrer"}</button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function PaymentModal({ invoice, onClose, onSaved }: { invoice: CaseInvoice; onClose: () => void; onSaved: () => void }) {
+  const due = Number(invoice.amount) - Number(invoice.paid_amount || 0);
+  const [form, setForm] = useState({ amount: due, paid_at: new Date().toISOString().slice(0, 10), method: "virement" as CasePayment["method"], reference: "", notes: "" });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function save() {
+    if (!Number.isFinite(form.amount) || form.amount <= 0) return setErr("Montant invalide");
+    setSaving(true);
+    try {
+      await casesApi.paymentRecord(invoice.id, form);
+      onSaved(); onClose();
+    } catch (e: unknown) { setErr((e as Error).message); }
+    finally { setSaving(false); }
+  }
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto"
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="my-8 w-full max-w-sm rounded-3xl border border-white/10 bg-[#0f1012] p-6 space-y-3 shadow-2xl">
+        <h3 className="font-display text-lg font-bold text-white">Enregistrer un paiement</h3>
+        <p className="text-xs text-white/55">{invoice.title} — Solde dû : <strong className="text-coral">{fmtMoney(due, invoice.currency)}</strong></p>
+        <div><label className={lbl}>Montant *</label><input type="number" value={String(form.amount)} onChange={(e) => setForm((f) => ({ ...f, amount: +e.target.value }))} className={inp} /></div>
+        <div className="grid grid-cols-2 gap-2">
+          <div><label className={lbl}>Date</label><input type="date" value={form.paid_at} onChange={(e) => setForm((f) => ({ ...f, paid_at: e.target.value }))} className={inp} /></div>
+          <div><label className={lbl}>Méthode</label><select value={form.method} onChange={(e) => setForm((f) => ({ ...f, method: e.target.value as CasePayment["method"] }))} className={inp}>{Object.entries(PAYMENT_METHODS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+        </div>
+        <div><label className={lbl}>Référence</label><input value={form.reference} onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))} className={inp} placeholder="Ex : ID transaction MoMo, n° chèque" /></div>
+        <div><label className={lbl}>Note</label><textarea rows={2} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} className={inp + " resize-none"} /></div>
+        {err && <div className="rounded-xl border border-coral/35 bg-coral/10 px-3 py-2 text-xs text-coral">{err}</div>}
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} disabled={saving} className="flex-1 rounded-xl border border-white/10 py-2.5 text-sm text-white/55 hover:text-white">Annuler</button>
+          <button onClick={save} disabled={saving} className="flex-1 rounded-xl bg-lime py-2.5 text-sm font-bold text-ink hover:brightness-110 disabled:opacity-50">{saving ? "…" : "Enregistrer"}</button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ── ACTIVITIES PANE (diligences) ─────────────────────────────────────────────
+function ActivitiesPane({ projectId, isAdmin }: { projectId: number; isAdmin: boolean }) {
+  const [activities, setActivities] = useState<CaseActivity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<CaseActivity | "new" | null>(null);
+
+  async function load() { setLoading(true); try { setActivities(await casesApi.activitiesList(projectId)); } finally { setLoading(false); } }
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [projectId]);
+
+  const totals = useMemo(() => {
+    const total = activities.length;
+    const totalMin = activities.reduce((s, a) => s + (a.duration_minutes || 0), 0);
+    const billableMin = activities.filter((a) => a.billable).reduce((s, a) => s + (a.duration_minutes || 0), 0);
+    const billableAmount = activities.filter((a) => a.billable).reduce((s, a) => s + Number(a.amount || 0), 0);
+    return { total, totalMin, billableMin, billableAmount };
+  }, [activities]);
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/45">Diligences</p>
+          <p className="font-display text-lg font-extrabold text-white">{totals.total}</p>
+        </div>
+        <div className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-white/45">Total temps</p>
+          <p className="font-display text-lg font-extrabold text-white">{fmtDuration(totals.totalMin)}</p>
+        </div>
+        <div className="rounded-xl border border-coral/20 bg-coral/[0.04] p-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-coral/85">Facturable</p>
+          <p className="font-display text-lg font-extrabold text-coral">{fmtDuration(totals.billableMin)}</p>
+        </div>
+        <div className="rounded-xl border border-lime/20 bg-lime/[0.04] p-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-lime/85">Montant fact.</p>
+          <p className="font-display text-lg font-extrabold text-lime">{fmtMoney(totals.billableAmount)}</p>
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <button onClick={() => setEditing("new")} className="rounded-xl bg-coral px-4 py-2 text-xs font-bold text-white hover:brightness-110">+ Diligence</button>
+      </div>
+
+      {loading ? <div className="text-center text-white/45 py-6">Chargement…</div> :
+        activities.length === 0 ? (
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] py-10 text-center text-sm text-white/45">
+            Aucune diligence enregistrée.
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {activities.map((a) => {
+              const cfg = ACTIVITY_KIND_LABELS[a.kind];
+              return (
+                <li key={a.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 flex items-start gap-3">
+                  <div className="shrink-0 text-2xl">{cfg.icon}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-violet/30 bg-violet/10 px-2 py-0.5 text-[10px] font-bold text-violet uppercase">{cfg.l}</span>
+                      <p className="font-semibold text-white">{a.title}</p>
+                      {!a.billable && <span className="text-[10px] text-white/45 font-bold uppercase">Non fact.</span>}
+                    </div>
+                    <p className="text-xs text-white/55 mt-0.5">
+                      📅 {fmt(a.date)} · ⏱ {fmtDuration(a.duration_minutes)}{a.agent_name ? ` · 👤 ${a.agent_name}` : ""}
+                      {a.amount != null && a.billable && <span className="text-lime/85"> · 💰 {fmtMoney(Number(a.amount))}</span>}
+                    </p>
+                    {a.description && <p className="text-xs text-white/65 mt-1 whitespace-pre-wrap">{a.description}</p>}
+                  </div>
+                  <div className="shrink-0 flex gap-1">
+                    <button onClick={() => setEditing(a)} className="rounded-lg border border-white/10 px-2.5 py-1 text-[10px] font-semibold text-white/60 hover:text-white">✎</button>
+                    <button onClick={async () => { if (confirm("Supprimer ?")) { await casesApi.activityDelete(a.id); load(); } }}
+                      className="rounded-lg text-white/45 hover:text-coral text-[10px] px-2 py-1 hover:bg-coral/10">🗑</button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+      {editing && <ActivityModal projectId={projectId} activity={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={load} />}
+    </div>
+  );
+}
+
+function ActivityModal({ projectId, activity, onClose, onSaved }: { projectId: number; activity: CaseActivity | null; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState<Partial<CaseActivity>>({ kind: "consultation", title: "", description: "", date: new Date().toISOString().slice(0, 10), duration_minutes: 60, billable: true, hourly_rate: null });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { if (activity) setForm(activity); }, [activity]);
+  async function save() {
+    if (!form.title?.trim()) return setErr("Titre requis");
+    setSaving(true);
+    try {
+      if (activity) await casesApi.activityUpdate(activity.id, form);
+      else await casesApi.activityCreate(projectId, form);
+      onSaved(); onClose();
+    } catch (e: unknown) { setErr((e as Error).message); }
+    finally { setSaving(false); }
+  }
+  const computedAmount = form.billable && form.hourly_rate && form.duration_minutes ? Math.round((form.duration_minutes / 60) * form.hourly_rate) : null;
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto"
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="my-8 w-full max-w-md rounded-3xl border border-white/10 bg-[#0f1012] p-6 space-y-3 shadow-2xl">
+        <h3 className="font-display text-lg font-bold text-white">{activity ? "Modifier" : "Nouvelle diligence"}</h3>
+        <div><label className={lbl}>Type</label><div className="grid grid-cols-3 gap-1">{Object.entries(ACTIVITY_KIND_LABELS).map(([v, c]) => (<button key={v} type="button" onClick={() => setForm((f) => ({ ...f, kind: v as CaseActivity["kind"] }))} className={`rounded-lg border px-2 py-1.5 text-[11px] font-bold transition ${form.kind === v ? "border-coral/35 bg-coral/15 text-coral" : "border-white/10 bg-white/[0.02] text-white/55 hover:border-white/25"}`}>{c.icon} {c.l}</button>))}</div></div>
+        <div><label className={lbl}>Titre *</label><input value={form.title ?? ""} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} className={inp} placeholder="Rédaction conclusions en réplique" /></div>
+        <div className="grid grid-cols-2 gap-2">
+          <div><label className={lbl}>Date</label><input type="date" value={form.date ?? ""} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} className={inp} /></div>
+          <div><label className={lbl}>Durée (min)</label><input type="number" value={String(form.duration_minutes ?? 0)} onChange={(e) => setForm((f) => ({ ...f, duration_minutes: +e.target.value }))} className={inp} /></div>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-white/80"><input type="checkbox" checked={form.billable !== false} onChange={(e) => setForm((f) => ({ ...f, billable: e.target.checked }))} className="h-4 w-4 rounded border-white/20" />Facturable</label>
+        {form.billable && (
+          <div className="grid grid-cols-2 gap-2">
+            <div><label className={lbl}>Taux horaire (FCFA)</label><input type="number" value={String(form.hourly_rate ?? "")} onChange={(e) => setForm((f) => ({ ...f, hourly_rate: e.target.value ? +e.target.value : null }))} className={inp} placeholder="Ex 25000" /></div>
+            <div><label className={lbl}>Montant {computedAmount != null ? "(calculé)" : ""}</label><input type="number" value={String(form.amount ?? computedAmount ?? "")} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value ? +e.target.value : null }))} className={inp} placeholder={computedAmount != null ? String(computedAmount) : "—"} /></div>
+          </div>
+        )}
+        <div><label className={lbl}>Description</label><textarea rows={2} value={form.description ?? ""} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} className={inp + " resize-none"} /></div>
+        {err && <div className="rounded-xl border border-coral/35 bg-coral/10 px-3 py-2 text-xs text-coral">{err}</div>}
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} disabled={saving} className="flex-1 rounded-xl border border-white/10 py-2.5 text-sm text-white/55 hover:text-white">Annuler</button>
+          <button onClick={save} disabled={saving} className="flex-1 rounded-xl bg-coral py-2.5 text-sm font-bold text-white hover:brightness-110 disabled:opacity-50">{saving ? "…" : "Enregistrer"}</button>
+        </div>
+      </div>
+    </motion.div>
   );
 }
 

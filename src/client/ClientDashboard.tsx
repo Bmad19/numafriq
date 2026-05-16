@@ -7,6 +7,9 @@ import {
   type ClientCaseDetail,
   type ClientCaseSummary,
   type ClientMessage,
+  type ClientCaseInvoice,
+  type ClientCasePayment,
+  type ClientEventRequest,
 } from "./api";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -320,13 +323,31 @@ function CaseDetailView({ caseId, onBack }: { caseId: number; onBack: () => void
   const [data, setData] = useState<ClientCaseDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [innerTab, setInnerTab] = useState<"timeline" | "events" | "documents">("timeline");
+  const [innerTab, setInnerTab] = useState<"timeline" | "events" | "documents" | "invoices">("timeline");
   const [downloadingId, setDownloadingId] = useState<number | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [invoices, setInvoices] = useState<ClientCaseInvoice[]>([]);
+  const [payments, setPayments] = useState<ClientCasePayment[]>([]);
+  const [myRequests, setMyRequests] = useState<ClientEventRequest[]>([]);
+
+  async function loadInvoices() {
+    try { const r = await clientCasesApi.invoices(caseId); setInvoices(r.invoices); setPayments(r.payments); } catch { /* ignore */ }
+  }
+  async function loadRequests() {
+    try { setMyRequests(await clientCasesApi.myEventRequests(caseId)); } catch { /* ignore */ }
+  }
 
   async function load() {
     setLoading(true);
-    try { const d = await clientCasesApi.get(caseId); setData(d); setErr(null); }
+    try {
+      const d = await clientCasesApi.get(caseId);
+      setData(d);
+      setErr(null);
+      // Charge en parallèle
+      loadInvoices();
+      loadRequests();
+    }
     catch (e: unknown) { setErr(e instanceof Error ? e.message : "Erreur"); }
     finally { setLoading(false); }
   }
@@ -400,14 +421,15 @@ function CaseDetailView({ caseId, onBack }: { caseId: number; onBack: () => void
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 rounded-xl border border-white/[0.08] bg-white/[0.02] p-1">
+      <div className="flex gap-1 rounded-xl border border-white/[0.08] bg-white/[0.02] p-1 overflow-x-auto">
         {([
           { v: "timeline", l: "Suivi", n: data.milestones.length },
           { v: "events",   l: "Agenda", n: data.events.length },
           { v: "documents",l: "Documents", n: data.documents.length },
+          { v: "invoices", l: "Honoraires", n: invoices.length },
         ] as const).map((t) => (
           <button key={t.v} onClick={() => setInnerTab(t.v as typeof innerTab)}
-            className={`flex-1 rounded-lg py-2 text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+            className={`shrink-0 flex-1 rounded-lg py-2 text-xs font-bold transition flex items-center justify-center gap-1.5 ${
               innerTab === t.v ? "bg-lime text-ink" : "text-white/55 hover:text-white"
             }`}>
             {t.l}<span className={`rounded-full px-1.5 text-[10px] ${innerTab === t.v ? "bg-ink/15 text-ink" : "bg-white/10"}`}>{t.n}</span>
@@ -455,6 +477,37 @@ function CaseDetailView({ caseId, onBack }: { caseId: number; onBack: () => void
 
       {innerTab === "events" && (
         <div className="space-y-3">
+          <div className="flex justify-between items-center">
+            <p className="text-xs text-white/55">Vos audiences, rendez-vous et échéances. Vous pouvez demander un nouveau RDV.</p>
+            <button onClick={() => setRequestOpen(true)} className="rounded-xl bg-lime/15 border border-lime/25 px-4 py-2 text-xs font-bold text-lime hover:bg-lime/25 transition">
+              + Demander un RDV
+            </button>
+          </div>
+          {myRequests.filter((r) => r.status === "pending").length > 0 && (
+            <div className="rounded-2xl border border-coral/25 bg-coral/[0.06] p-3 space-y-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-coral">Vos demandes en attente</p>
+              {myRequests.filter((r) => r.status === "pending").map((r) => (
+                <div key={r.id} className="rounded-lg bg-white/[0.03] p-2 text-xs">
+                  <p className="font-semibold text-white">{r.title}</p>
+                  <p className="text-white/55">🕒 Proposé : {fmtDateTime(r.proposed_date)}</p>
+                  <p className="text-white/45 italic">En attente de validation par le cabinet.</p>
+                </div>
+              ))}
+            </div>
+          )}
+          {myRequests.filter((r) => r.status !== "pending" && r.status !== "accepted" && r.status !== "rescheduled").length > 0 && (
+            <details className="rounded-xl bg-white/[0.02] p-2">
+              <summary className="cursor-pointer text-xs text-white/55 hover:text-white">Mes demandes traitées ({myRequests.filter((r) => r.status !== "pending" && r.status !== "accepted" && r.status !== "rescheduled").length})</summary>
+              <ul className="mt-2 space-y-1.5">
+                {myRequests.filter((r) => r.status === "refused" || r.status === "cancelled").map((r) => (
+                  <li key={r.id} className="rounded bg-white/[0.02] px-2 py-1.5 text-[11px]">
+                    <p className="text-white/65">{r.title} — <span className="text-coral">refusée</span></p>
+                    {r.decided_message && <p className="text-white/45 italic">« {r.decided_message} »</p>}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
           {data.events.length === 0 ? (
             <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] py-10 text-center text-sm text-white/45">
               Aucune audience ou rendez-vous programmé pour l'instant.
@@ -476,6 +529,10 @@ function CaseDetailView({ caseId, onBack }: { caseId: number; onBack: () => void
             </>
           )}
         </div>
+      )}
+
+      {innerTab === "invoices" && (
+        <ClientInvoicesPane invoices={invoices} payments={payments} />
       )}
 
       {innerTab === "documents" && (
@@ -521,7 +578,155 @@ function CaseDetailView({ caseId, onBack }: { caseId: number; onBack: () => void
       )}
 
       <ClientUploadModal open={uploadOpen} onClose={() => setUploadOpen(false)} caseId={caseId} onUploaded={load} />
+      <ClientRequestEventModal open={requestOpen} onClose={() => setRequestOpen(false)} caseId={caseId} onSubmitted={() => { setRequestOpen(false); loadRequests(); }} />
     </div>
+  );
+}
+
+function ClientInvoicesPane({ invoices, payments }: { invoices: ClientCaseInvoice[]; payments: ClientCasePayment[] }) {
+  const totalDue = invoices.filter((i) => i.status !== "annulee").reduce((s, i) => s + (Number(i.amount) - Number(i.paid_amount || 0)), 0);
+  const totalPaid = invoices.filter((i) => i.status !== "annulee").reduce((s, i) => s + Number(i.paid_amount || 0), 0);
+  const fmtMoney = (n: number, c = "XOF") => `${Math.round(n).toLocaleString("fr-FR")} ${c === "XOF" ? "FCFA" : c}`;
+  const STATUS_CFG: Record<string, { l: string; cls: string }> = {
+    envoyee: { l: "Envoyée", cls: "border-coral/30 bg-coral/12 text-coral" },
+    partiellement_payee: { l: "Partiel.", cls: "border-violet/30 bg-violet/12 text-violet" },
+    payee: { l: "Payée", cls: "border-lime/30 bg-lime/15 text-lime" },
+    annulee: { l: "Annulée", cls: "border-white/10 bg-white/[0.02] text-white/40 line-through" },
+  };
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-xl border border-lime/20 bg-lime/[0.04] p-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-lime/85">Réglé</p>
+          <p className="font-display text-lg font-extrabold text-lime">{fmtMoney(totalPaid)}</p>
+        </div>
+        <div className={`rounded-xl border p-3 ${totalDue > 0 ? "border-coral/30 bg-coral/[0.06]" : "border-white/[0.08] bg-white/[0.02]"}`}>
+          <p className={`text-[10px] font-bold uppercase tracking-widest ${totalDue > 0 ? "text-coral" : "text-white/45"}`}>Solde dû</p>
+          <p className={`font-display text-lg font-extrabold ${totalDue > 0 ? "text-coral" : "text-white"}`}>{fmtMoney(totalDue)}</p>
+        </div>
+      </div>
+      {invoices.length === 0 ? (
+        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] py-10 text-center text-sm text-white/45">
+          Aucune facture émise.
+        </div>
+      ) : (
+        <ul className="space-y-2">
+          {invoices.map((inv) => {
+            const cfg = STATUS_CFG[inv.status] ?? STATUS_CFG.envoyee;
+            const due = Number(inv.amount) - Number(inv.paid_amount || 0);
+            const overdue = inv.due_date && inv.status !== "payee" && inv.status !== "annulee" && new Date(inv.due_date) < new Date();
+            const invPays = payments.filter((p) => p.invoice_id === inv.id);
+            return (
+              <li key={inv.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      {inv.invoice_number && <span className="rounded-md bg-violet/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-violet">{inv.invoice_number}</span>}
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${cfg.cls}`}>{cfg.l}</span>
+                      {overdue && <span className="text-[10px] text-coral font-bold uppercase">⚠ Échue</span>}
+                    </div>
+                    <p className="font-semibold text-white">{inv.title}</p>
+                    {inv.description && <p className="text-xs text-white/55 mt-0.5">{inv.description}</p>}
+                    <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-white/55">
+                      <span>💰 <strong className="text-white">{fmtMoney(Number(inv.amount), inv.currency)}</strong></span>
+                      {inv.paid_amount > 0 && <span className="text-lime/85">✓ Payé : {fmtMoney(Number(inv.paid_amount), inv.currency)}</span>}
+                      {due > 0 && <span className="text-coral/85">Reste : {fmtMoney(due, inv.currency)}</span>}
+                      {inv.due_date && <span>📅 Échéance : {fmtDate(inv.due_date)}</span>}
+                    </div>
+                    {inv.notes_client && <p className="mt-2 text-xs text-white/65 italic border-l-2 border-lime/30 pl-3">« {inv.notes_client} »</p>}
+                  </div>
+                </div>
+                {invPays.length > 0 && (
+                  <details className="mt-2 text-[11px] text-white/55">
+                    <summary className="cursor-pointer text-lime/75 hover:text-lime">▸ Historique paiements</summary>
+                    <ul className="mt-2 space-y-1">
+                      {invPays.map((p) => <li key={p.id} className="rounded bg-white/[0.03] px-2 py-1">{fmtDate(p.paid_at)} — {fmtMoney(Number(p.amount), inv.currency)} ({p.method}{p.reference ? ` · ${p.reference}` : ""})</li>)}
+                    </ul>
+                  </details>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ClientRequestEventModal({ open, onClose, caseId, onSubmitted }: { open: boolean; onClose: () => void; caseId: number; onSubmitted: () => void }) {
+  const [type, setType] = useState<"rdv" | "consultation" | "autre">("rdv");
+  const [title, setTitle] = useState("");
+  const [proposedDate, setProposedDate] = useState("");
+  const [altDate, setAltDate] = useState("");
+  const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (open) {
+      setType("rdv"); setTitle(""); setMessage(""); setAltDate(""); setErr(null);
+      const d = new Date(); d.setDate(d.getDate() + 3); d.setHours(10, 0, 0, 0);
+      setProposedDate(d.toISOString().slice(0, 16));
+    }
+  }, [open]);
+  if (!open) return null;
+  async function send() {
+    if (!title.trim()) return setErr("Indiquez l'objet du rendez-vous");
+    if (!proposedDate) return setErr("Choisissez une date");
+    setSaving(true);
+    try {
+      await clientCasesApi.requestEvent(caseId, {
+        type, title: title.trim(),
+        proposed_date: new Date(proposedDate).toISOString(),
+        alternative_date: altDate ? new Date(altDate).toISOString() : undefined,
+        message: message.trim() || undefined,
+      });
+      onSubmitted();
+    } catch (e: unknown) { setErr(e instanceof Error ? e.message : "Échec d'envoi"); }
+    finally { setSaving(false); }
+  }
+  return (
+    <AnimatePresence>
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto"
+        onClick={(e) => e.target === e.currentTarget && onClose()}>
+        <div className="my-8 w-full max-w-md rounded-3xl border border-white/10 bg-[#0f1012] p-6 space-y-3 shadow-2xl">
+          <h3 className="font-display text-lg font-bold text-white">Demander un rendez-vous</h3>
+          <p className="text-xs text-white/55">Le cabinet examinera votre demande et confirmera (ou proposera une autre date).</p>
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-white/45 mb-1.5">Type</label>
+            <div className="grid grid-cols-3 gap-2">
+              {([["rdv", "Rendez-vous"], ["consultation", "Consultation"], ["autre", "Autre"]] as const).map(([v, l]) => (
+                <button key={v} type="button" onClick={() => setType(v)}
+                  className={`rounded-xl border px-2 py-2 text-xs font-bold transition ${type === v ? "border-lime/35 bg-lime/15 text-lime" : "border-white/10 bg-white/[0.02] text-white/55"}`}>{l}</button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-white/45 mb-1.5">Objet *</label>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-white focus:border-lime/40 focus:outline-none" placeholder="Ex : Point d'avancement, signature contrat" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-white/45 mb-1.5">Date proposée *</label>
+              <input type="datetime-local" value={proposedDate} onChange={(e) => setProposedDate(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-sm text-white focus:outline-none" />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-white/45 mb-1.5">Alternative</label>
+              <input type="datetime-local" value={altDate} onChange={(e) => setAltDate(e.target.value)} className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-sm text-white focus:outline-none" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-white/45 mb-1.5">Message (optionnel)</label>
+            <textarea rows={2} value={message} onChange={(e) => setMessage(e.target.value)} className="w-full resize-none rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-white focus:outline-none" placeholder="Précisez le motif, contraintes horaires…" />
+          </div>
+          {err && <div className="rounded-xl border border-coral/30 bg-coral/10 px-3 py-2 text-xs text-coral">{err}</div>}
+          <div className="flex gap-3 pt-2">
+            <button onClick={onClose} disabled={saving} className="flex-1 rounded-xl border border-white/10 py-2.5 text-sm text-white/55 hover:text-white">Annuler</button>
+            <button onClick={send} disabled={saving} className="flex-1 rounded-xl bg-lime py-2.5 text-sm font-bold text-ink hover:brightness-110 disabled:opacity-50">{saving ? "Envoi…" : "Envoyer la demande"}</button>
+          </div>
+        </div>
+      </motion.div>
+    </AnimatePresence>
   );
 }
 

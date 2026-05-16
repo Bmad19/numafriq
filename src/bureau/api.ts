@@ -112,6 +112,37 @@ export const casesApi = {
   documentDelete: (docId: number) =>
     request('cases.php', 'DELETE', undefined, { action: 'document_delete', id: String(docId) }),
 
+  // Honoraires
+  invoicesList:    (projectId: number) => request<{ invoices: CaseInvoice[]; payments: CasePayment[] }>('cases.php', 'GET', undefined, { action: 'invoices_list', id: String(projectId) }),
+  invoiceCreate:   (projectId: number, data: Partial<CaseInvoice>) =>
+    request<{ success: boolean; invoice: CaseInvoice }>('cases.php', 'POST', data, { action: 'invoice_create', id: String(projectId) }),
+  invoiceUpdate:   (invoiceId: number, data: Partial<CaseInvoice>) =>
+    request('cases.php', 'PUT', data, { action: 'invoice_update', id: String(invoiceId) }),
+  invoiceDelete:   (invoiceId: number) =>
+    request('cases.php', 'DELETE', undefined, { action: 'invoice_delete', id: String(invoiceId) }),
+  paymentRecord:   (invoiceId: number, data: Partial<CasePayment>) =>
+    request<{ success: boolean; paid_amount: number; status: string }>('cases.php', 'POST', data, { action: 'payment_record', id: String(invoiceId) }),
+  paymentDelete:   (paymentId: number) =>
+    request('cases.php', 'DELETE', undefined, { action: 'payment_delete', id: String(paymentId) }),
+
+  // Demandes RDV
+  eventRequestsList: (projectId?: number) =>
+    request<CaseEventRequest[]>('cases.php', 'GET', undefined, { action: 'event_requests_list', id: String(projectId ?? 0) }),
+  eventRequestDecide: (requestId: number, data: {
+    decision: 'accepted' | 'rescheduled' | 'refused';
+    message?: string; scheduled_at?: string; location?: string; duration_minutes?: number;
+    notes_internal?: string; notes_client_facing?: string;
+  }) => request<{ success: boolean; scheduled_event_id?: number }>('cases.php', 'POST', data, { action: 'event_request_decide', id: String(requestId) }),
+
+  // Diligences
+  activitiesList: (projectId: number) => request<CaseActivity[]>('cases.php', 'GET', undefined, { action: 'activities_list', id: String(projectId) }),
+  activityCreate: (projectId: number, data: Partial<CaseActivity>) =>
+    request<{ success: boolean; activity: CaseActivity }>('cases.php', 'POST', data, { action: 'activity_create', id: String(projectId) }),
+  activityUpdate: (activityId: number, data: Partial<CaseActivity>) =>
+    request('cases.php', 'PUT', data, { action: 'activity_update', id: String(activityId) }),
+  activityDelete: (activityId: number) =>
+    request('cases.php', 'DELETE', undefined, { action: 'activity_delete', id: String(activityId) }),
+
   /** Téléchargement document (auth via header → blob URL → nouvel onglet). */
   openDocument: async (docId: number, suggestedName?: string): Promise<void> => {
     const url = new URL(`${BASE}/cases.php`, window.location.origin);
@@ -323,6 +354,76 @@ export type CaseDetail = {
   clients: CaseClient[];
 };
 
+// ── Phase 2 : honoraires, paiements, demandes RDV, diligences ────────────────
+export type CaseInvoice = {
+  id: number;
+  project_id: number;
+  invoice_number?: string | null;
+  title: string;
+  description?: string | null;
+  amount: number;
+  currency: string;
+  status: 'brouillon' | 'envoyee' | 'partiellement_payee' | 'payee' | 'annulee';
+  due_date?: string | null;
+  sent_at?: string | null;
+  paid_amount: number;
+  paid_at?: string | null;
+  notes_internal?: string | null;
+  notes_client?: string | null;
+  visible_to_client: boolean;
+  created_at: string;
+  updated_at?: string;
+};
+
+export type CasePayment = {
+  id: number;
+  invoice_id: number;
+  amount: number;
+  paid_at: string;
+  method: 'especes' | 'virement' | 'mobile_money' | 'cheque' | 'carte' | 'autre';
+  reference?: string | null;
+  notes?: string | null;
+  created_at: string;
+};
+
+export type CaseEventRequest = {
+  id: number;
+  project_id: number;
+  client_id: number;
+  type: 'audience' | 'rdv' | 'consultation' | 'autre';
+  title: string;
+  proposed_date: string;
+  alternative_date?: string | null;
+  message?: string | null;
+  status: 'pending' | 'accepted' | 'rescheduled' | 'refused' | 'cancelled';
+  decided_at?: string | null;
+  decided_by?: number | null;
+  decided_by_name?: string | null;
+  decided_message?: string | null;
+  scheduled_event_id?: number | null;
+  requester_name?: string | null;
+  requester_email?: string | null;
+  created_at: string;
+};
+
+export type CaseActivity = {
+  id: number;
+  project_id: number;
+  user_id?: number | null;
+  agent_name?: string | null;
+  kind: 'consultation' | 'redaction' | 'audience' | 'recherche' | 'rdv' | 'expertise' | 'telephone' | 'email' | 'autre';
+  title: string;
+  description?: string | null;
+  date: string;
+  duration_minutes: number;
+  billable: boolean;
+  hourly_rate?: number | null;
+  amount?: number | null;
+  invoice_id?: number | null;
+  created_at: string;
+  updated_at?: string;
+};
+
 export type ProjectStats = { total: number; en_cours: number; termine: number; en_pause: number; budget_total: number };
 
 export type Mission = {
@@ -452,6 +553,21 @@ export const leadsApi = {
     ),
   update:    (id: number, data: Partial<Lead>) => request('leads.php', 'PUT', data, { action: 'update', id: String(id) }),
   delete:    (id: number) => request('leads.php', 'DELETE', undefined, { action: 'delete', id: String(id) }),
+};
+
+// ── Clients (CRUD depuis le bureau — sélecteur dossier) ─────────────────────
+export type ClientAccount = {
+  id: number;
+  name: string;
+  email: string;
+  company?: string | null;
+  phone?: string | null;
+  active: boolean;
+  created_at: string;
+};
+
+export const clientsApi = {
+  listAll: () => request<ClientAccount[]>('clients.php', 'GET', undefined, { action: 'list_all' }),
 };
 
 // ── Messages clients (accès depuis l'espace bureau — utilise le token bureau) ─

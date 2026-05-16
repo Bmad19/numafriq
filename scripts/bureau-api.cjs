@@ -934,6 +934,22 @@ app.all('/api/bureau/cases.php', async (req, res) => {
       if (!payload.scheduled_at) return res.status(400).json({ error: 'Date/heure requise' });
       const { data, error } = await supabase.from('case_events').insert(payload).select().single();
       if (error) return res.status(500).json({ error: error.message });
+      // Notification mail clients liés (async fire-and-forget)
+      if (payload.visible_to_client) {
+        (async () => {
+          const { data: links } = await supabase.from('case_clients').select('client:clients(email,name)').eq('project_id', projectId);
+          for (const l of (links ?? [])) {
+            if (l.client?.email) {
+              const dt = new Date(payload.scheduled_at).toLocaleString('fr-FR');
+              await notifyClientByEmail({
+                to: l.client.email,
+                subject: `Afrilex Conseil — Nouvel événement : ${payload.title}`,
+                text: `Bonjour ${l.client.name || ''},\n\nUn nouvel événement a été ajouté à votre dossier :\n\n${payload.title}\n📅 ${dt}${payload.location ? `\n📍 ${payload.location}` : ''}${payload.notes_client_facing ? `\n\n${payload.notes_client_facing}` : ''}\n\nConnectez-vous à votre espace client : https://www.afrilexconseil.com/client\n\nCordialement,\nL'équipe Afrilex Conseil`,
+              });
+            }
+          }
+        })().catch(() => {});
+      }
       return res.json({ success: true, event: data });
     }
     if (action === 'event_update' && req.method === 'PUT') {
@@ -990,6 +1006,21 @@ app.all('/api/bureau/cases.php', async (req, res) => {
         .select('id, title, kind, description, filename, mime, size_bytes, visible_to_client, confidential, created_at')
         .single();
       if (error) return res.status(500).json({ error: error.message });
+      // Notif mail clients liés (async, uniquement si visible et non confidentiel)
+      if (payload.visible_to_client && !payload.confidential) {
+        (async () => {
+          const { data: links } = await supabase.from('case_clients').select('client:clients(email,name)').eq('project_id', projectId);
+          for (const l of (links ?? [])) {
+            if (l.client?.email) {
+              await notifyClientByEmail({
+                to: l.client.email,
+                subject: `Afrilex Conseil — Nouveau document : ${payload.title}`,
+                text: `Bonjour ${l.client.name || ''},\n\nUn nouveau document a été ajouté à votre dossier :\n\n📄 ${payload.title} (${payload.kind})${payload.description ? `\n\n${payload.description}` : ''}\n\nConsultez-le depuis votre espace client : https://www.afrilexconseil.com/client\n\nCordialement,\nL'équipe Afrilex Conseil`,
+              });
+            }
+          }
+        })().catch(() => {});
+      }
       return res.json({ success: true, document: data });
     }
     if (action === 'document_update' && req.method === 'PUT') {
@@ -1035,6 +1066,227 @@ app.all('/api/bureau/cases.php', async (req, res) => {
       if (!isSuperAdmin) return res.status(403).json({ error: 'Réservé au super administrateur.' });
       // Sup les dossier (cascade prend documents/milestones/events/case_clients)
       const { error } = await supabase.from('projects').delete().eq('id', +id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    // ── HONORAIRES (factures + paiements) ───────────────────────────────────
+    if (action === 'invoices_list' && req.method === 'GET') {
+      const projectId = +id;
+      const [{ data: invoices }, { data: payments }] = await Promise.all([
+        supabase.from('case_invoices').select('*').eq('project_id', projectId).order('created_at', { ascending: false }),
+        supabase.from('case_payments').select('*, invoice:case_invoices!invoice_id(project_id)').order('paid_at', { ascending: false }),
+      ]);
+      const projectPayments = (payments ?? []).filter((p) => p.invoice?.project_id === projectId).map((p) => ({ ...p, invoice: undefined }));
+      return res.json({ invoices: invoices ?? [], payments: projectPayments });
+    }
+    if (action === 'invoice_create' && req.method === 'POST') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const projectId = +id;
+      const b = req.body || {};
+      const payload = {
+        project_id: projectId,
+        invoice_number: b.invoice_number ? String(b.invoice_number).trim().slice(0, 80) : null,
+        title: String(b.title ?? '').trim().slice(0, 240),
+        description: b.description ? String(b.description).slice(0, 4000) : null,
+        amount: Number.isFinite(+b.amount) ? +b.amount : 0,
+        currency: b.currency ? String(b.currency).slice(0, 8) : 'XOF',
+        status: ['brouillon','envoyee','partiellement_payee','payee','annulee'].includes(b.status) ? b.status : 'brouillon',
+        due_date: b.due_date || null,
+        notes_internal: b.notes_internal ? String(b.notes_internal).slice(0, 4000) : null,
+        notes_client: b.notes_client ? String(b.notes_client).slice(0, 4000) : null,
+        visible_to_client: b.visible_to_client !== false,
+        sent_at: b.status === 'envoyee' ? new Date().toISOString() : null,
+        created_by: u.id,
+      };
+      if (!payload.title) return res.status(400).json({ error: 'Titre requis' });
+      const { data, error } = await supabase.from('case_invoices').insert(payload).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, invoice: data });
+    }
+    if (action === 'invoice_update' && req.method === 'PUT') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const invoiceId = +id;
+      const b = req.body || {};
+      const update = {};
+      if (b.invoice_number !== undefined) update.invoice_number = b.invoice_number ? String(b.invoice_number).slice(0, 80) : null;
+      if (b.title !== undefined)          update.title = String(b.title).slice(0, 240);
+      if (b.description !== undefined)    update.description = b.description ? String(b.description).slice(0, 4000) : null;
+      if (b.amount !== undefined && Number.isFinite(+b.amount)) update.amount = +b.amount;
+      if (b.currency !== undefined)       update.currency = String(b.currency).slice(0, 8);
+      if (b.status !== undefined && ['brouillon','envoyee','partiellement_payee','payee','annulee'].includes(b.status)) {
+        update.status = b.status;
+        if (b.status === 'envoyee') update.sent_at = new Date().toISOString();
+      }
+      if (b.due_date !== undefined)       update.due_date = b.due_date || null;
+      if (b.notes_internal !== undefined) update.notes_internal = b.notes_internal ? String(b.notes_internal).slice(0, 4000) : null;
+      if (b.notes_client !== undefined)   update.notes_client = b.notes_client ? String(b.notes_client).slice(0, 4000) : null;
+      if (b.visible_to_client !== undefined) update.visible_to_client = !!b.visible_to_client;
+      const { error } = await supabase.from('case_invoices').update(update).eq('id', invoiceId);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+    if (action === 'invoice_delete' && req.method === 'DELETE') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const { error } = await supabase.from('case_invoices').delete().eq('id', +id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+    if (action === 'payment_record' && req.method === 'POST') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const invoiceId = +id;
+      const b = req.body || {};
+      const amount = +b.amount;
+      if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ error: 'Montant invalide' });
+      // Insertion du paiement
+      const { error: pErr } = await supabase.from('case_payments').insert({
+        invoice_id: invoiceId,
+        amount,
+        paid_at: b.paid_at || new Date().toISOString().slice(0, 10),
+        method: ['especes','virement','mobile_money','cheque','carte','autre'].includes(b.method) ? b.method : 'autre',
+        reference: b.reference ? String(b.reference).slice(0, 240) : null,
+        notes: b.notes ? String(b.notes).slice(0, 2000) : null,
+        recorded_by: u.id,
+      });
+      if (pErr) return res.status(500).json({ error: pErr.message });
+      // Recalcul du paid_amount + statut auto
+      const { data: inv } = await supabase.from('case_invoices').select('amount').eq('id', invoiceId).maybeSingle();
+      const { data: pays } = await supabase.from('case_payments').select('amount').eq('invoice_id', invoiceId);
+      const total = (pays ?? []).reduce((s, p) => s + Number(p.amount || 0), 0);
+      const status = total >= Number(inv?.amount || 0) ? 'payee' : (total > 0 ? 'partiellement_payee' : 'envoyee');
+      await supabase.from('case_invoices').update({ paid_amount: total, paid_at: new Date().toISOString(), status }).eq('id', invoiceId);
+      return res.json({ success: true, paid_amount: total, status });
+    }
+    if (action === 'payment_delete' && req.method === 'DELETE') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const paymentId = +id;
+      const { data: pay } = await supabase.from('case_payments').select('invoice_id').eq('id', paymentId).maybeSingle();
+      if (!pay) return res.status(404).json({ error: 'Paiement introuvable' });
+      await supabase.from('case_payments').delete().eq('id', paymentId);
+      // Recalc
+      const { data: inv } = await supabase.from('case_invoices').select('amount').eq('id', pay.invoice_id).maybeSingle();
+      const { data: pays } = await supabase.from('case_payments').select('amount').eq('invoice_id', pay.invoice_id);
+      const total = (pays ?? []).reduce((s, p) => s + Number(p.amount || 0), 0);
+      const status = total >= Number(inv?.amount || 0) ? 'payee' : (total > 0 ? 'partiellement_payee' : 'envoyee');
+      await supabase.from('case_invoices').update({ paid_amount: total, status }).eq('id', pay.invoice_id);
+      return res.json({ success: true, paid_amount: total, status });
+    }
+
+    // ── DEMANDES DE RDV (workflow) ──────────────────────────────────────────
+    if (action === 'event_requests_list' && req.method === 'GET') {
+      const projectId = +id;
+      let q = supabase.from('case_event_requests')
+        .select('*, requester:clients!client_id(name,email), decider:users!decided_by(full_name)')
+        .order('created_at', { ascending: false });
+      if (projectId) q = q.eq('project_id', projectId);
+      const { data, error } = await q;
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json((data ?? []).map((r) => ({
+        ...r,
+        requester_name: r.requester?.name ?? null,
+        requester_email: r.requester?.email ?? null,
+        decided_by_name: r.decider?.full_name ?? null,
+        requester: undefined, decider: undefined,
+      })));
+    }
+    if (action === 'event_request_decide' && req.method === 'POST') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const requestId = +id;
+      const b = req.body || {};
+      const decision = String(b.decision ?? '').toLowerCase();
+      if (!['accepted','rescheduled','refused'].includes(decision)) return res.status(400).json({ error: 'Décision invalide' });
+      const { data: reqRow } = await supabase.from('case_event_requests').select('*').eq('id', requestId).maybeSingle();
+      if (!reqRow) return res.status(404).json({ error: 'Demande introuvable' });
+      const update = {
+        status: decision,
+        decided_at: new Date().toISOString(),
+        decided_by: u.id,
+        decided_message: b.message ? String(b.message).slice(0, 2000) : null,
+      };
+      let scheduledEventId = null;
+      // Si accepté ou reprogrammé → créer un case_event lié
+      if (decision === 'accepted' || decision === 'rescheduled') {
+        const finalDate = decision === 'rescheduled' && b.scheduled_at ? b.scheduled_at : reqRow.proposed_date;
+        const { data: ev, error: evErr } = await supabase.from('case_events').insert({
+          project_id: reqRow.project_id,
+          type: reqRow.type,
+          title: reqRow.title,
+          location: b.location ? String(b.location).slice(0, 300) : null,
+          scheduled_at: finalDate,
+          duration_minutes: Number.isFinite(+b.duration_minutes) ? +b.duration_minutes : 60,
+          notes_client_facing: b.notes_client_facing ? String(b.notes_client_facing).slice(0, 4000) : (reqRow.message ? `Demandé par le client : « ${reqRow.message} »` : null),
+          notes_internal: b.notes_internal ? String(b.notes_internal).slice(0, 4000) : null,
+          visible_to_client: true,
+          created_by: u.id,
+        }).select().single();
+        if (evErr) return res.status(500).json({ error: evErr.message });
+        scheduledEventId = ev.id;
+        update.scheduled_event_id = scheduledEventId;
+      }
+      const { error } = await supabase.from('case_event_requests').update(update).eq('id', requestId);
+      if (error) return res.status(500).json({ error: error.message });
+      sendWhatsApp(`📅 Demande RDV ${decision === 'accepted' ? '✅ acceptée' : decision === 'rescheduled' ? '↻ reprogrammée' : '❌ refusée'}\nClient #${reqRow.client_id}\n${reqRow.title}\n${update.decided_message ? `\nMessage : ${update.decided_message}` : ''}`);
+      return res.json({ success: true, scheduled_event_id: scheduledEventId });
+    }
+
+    // ── DILIGENCES (time-tracking interne) ──────────────────────────────────
+    if (action === 'activities_list' && req.method === 'GET') {
+      const projectId = +id;
+      const { data, error } = await supabase.from('case_activities')
+        .select('*, agent:users!user_id(full_name)')
+        .eq('project_id', projectId)
+        .order('date', { ascending: false });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json((data ?? []).map((a) => ({ ...a, agent_name: a.agent?.full_name ?? null, agent: undefined })));
+    }
+    if (action === 'activity_create' && req.method === 'POST') {
+      const projectId = +id;
+      const b = req.body || {};
+      const duration = Number.isFinite(+b.duration_minutes) ? +b.duration_minutes : 0;
+      const rate = Number.isFinite(+b.hourly_rate) ? +b.hourly_rate : null;
+      const amount = b.amount != null && Number.isFinite(+b.amount) ? +b.amount : (rate != null ? Math.round((duration / 60) * rate) : null);
+      const payload = {
+        project_id: projectId,
+        user_id: u.id,
+        kind: ['consultation','redaction','audience','recherche','rdv','expertise','telephone','email','autre'].includes(b.kind) ? b.kind : 'autre',
+        title: String(b.title ?? '').trim().slice(0, 240),
+        description: b.description ? String(b.description).slice(0, 4000) : null,
+        date: b.date || new Date().toISOString().slice(0, 10),
+        duration_minutes: duration,
+        billable: b.billable !== false,
+        hourly_rate: rate,
+        amount,
+      };
+      if (!payload.title) return res.status(400).json({ error: 'Titre requis' });
+      const { data, error } = await supabase.from('case_activities').insert(payload).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, activity: data });
+    }
+    if (action === 'activity_update' && req.method === 'PUT') {
+      const activityId = +id;
+      const b = req.body || {};
+      const update = {};
+      if (b.kind !== undefined && ['consultation','redaction','audience','recherche','rdv','expertise','telephone','email','autre'].includes(b.kind)) update.kind = b.kind;
+      if (b.title !== undefined)            update.title = String(b.title).slice(0, 240);
+      if (b.description !== undefined)      update.description = b.description ? String(b.description).slice(0, 4000) : null;
+      if (b.date !== undefined)             update.date = b.date;
+      if (b.duration_minutes !== undefined) update.duration_minutes = +b.duration_minutes || 0;
+      if (b.billable !== undefined)         update.billable = !!b.billable;
+      if (b.hourly_rate !== undefined)      update.hourly_rate = b.hourly_rate ? +b.hourly_rate : null;
+      if (b.amount !== undefined)           update.amount = b.amount != null ? +b.amount : null;
+      if (b.invoice_id !== undefined)       update.invoice_id = b.invoice_id ? +b.invoice_id : null;
+      const { error } = await supabase.from('case_activities').update(update).eq('id', activityId);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+    if (action === 'activity_delete' && req.method === 'DELETE') {
+      const activityId = +id;
+      // Tout agent peut supprimer ses propres activités, admin+ peut supprimer toutes
+      if (!isAdmin) {
+        const { data: a } = await supabase.from('case_activities').select('user_id').eq('id', activityId).maybeSingle();
+        if (!a || a.user_id !== u.id) return res.status(403).json({ error: 'Vous ne pouvez supprimer que vos propres diligences.' });
+      }
+      const { error } = await supabase.from('case_activities').delete().eq('id', activityId);
       if (error) return res.status(500).json({ error: error.message });
       return res.json({ success: true });
     }
@@ -3003,6 +3255,33 @@ async function sendViaSmtpResilient(account, mail) {
   };
 }
 
+/**
+ * Notification mail au client : envoie un mail simple via le premier mailbox_account actif.
+ * Asynchrone fire-and-forget — n'attend PAS la réponse SMTP, ne bloque jamais.
+ */
+async function notifyClientByEmail({ to, subject, text, html }) {
+  if (!nodemailer || !to) return;
+  try {
+    const { data: account } = await supabase
+      .from('mailbox_accounts')
+      .select('label, email, password_enc, smtp_host, smtp_port, smtp_secure, imap_host')
+      .eq('active', true)
+      .order('id', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (!account) return; // Pas de compte mail configuré → silencieux
+    const result = await sendViaSmtpResilient(account, {
+      to: [to],
+      subject: subject || '(Afrilex Conseil)',
+      text,
+      html,
+    });
+    if (!result.ok) console.warn('notifyClientByEmail KO:', result.error?.slice(0, 120));
+  } catch (e) {
+    console.warn('notifyClientByEmail exception:', e?.message);
+  }
+}
+
 /** Best-effort copie du raw RFC822 dans le dossier Envoyés. Silencieux si absent / non supporté. */
 async function appendToSentFolderInBackground(account, raw) {
   if (!raw || !ImapFlow) return;
@@ -3098,6 +3377,28 @@ function quickParseMime(source) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// CLIENTS — Liste minimale des comptes clients (pour les sélecteurs bureau)
+// ══════════════════════════════════════════════════════════════════════════════
+app.get('/api/bureau/clients.php', async (req, res) => {
+  try {
+    if (!(await authGuard(req, res))) return;
+    if (!permGuard(req, res, 'clients')) return;
+    const { action } = req.query;
+    if (action === 'list_all') {
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, name, email, company, phone, active, created_at')
+        .order('name', { ascending: true });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data ?? []);
+    }
+    return res.status(404).json({ error: 'Action non trouvée' });
+  } catch (e) {
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // CASES — Vue client (lecture seule des dossiers du client connecté)
 // Filtre tout par visible_to_client / confidential pour ne JAMAIS exposer
 // d'info confidentielle équipe.
@@ -3187,6 +3488,67 @@ app.all('/api/client/cases.php', async (req, res) => {
         'Cache-Control': 'no-store, private',
       });
       return res.end(buf);
+    }
+
+    // ── Honoraires : factures visibles + paiements de ce dossier ──────────────
+    if (action === 'invoices' && req.method === 'GET') {
+      const projectId = +id;
+      const allowed = await clientHasAccessToCase(c.id, projectId) || (c.project_id === projectId);
+      if (!allowed) return res.status(403).json({ error: 'Accès refusé' });
+      const { data: invoices } = await supabase
+        .from('case_invoices')
+        .select('id, invoice_number, title, description, amount, currency, status, due_date, sent_at, paid_amount, paid_at, notes_client, created_at')
+        .eq('project_id', projectId)
+        .eq('visible_to_client', true)
+        .neq('status', 'brouillon')   // pas de brouillons côté client
+        .order('created_at', { ascending: false });
+      const invoiceIds = (invoices ?? []).map((i) => i.id);
+      let payments = [];
+      if (invoiceIds.length) {
+        const { data: pays } = await supabase
+          .from('case_payments')
+          .select('id, invoice_id, amount, paid_at, method, reference')
+          .in('invoice_id', invoiceIds)
+          .order('paid_at', { ascending: false });
+        payments = pays ?? [];
+      }
+      return res.json({ invoices: invoices ?? [], payments });
+    }
+
+    // ── Demandes RDV : client soumet une nouvelle demande ─────────────────────
+    if (action === 'request_event' && req.method === 'POST') {
+      const projectId = +id;
+      const allowed = await clientHasAccessToCase(c.id, projectId) || (c.project_id === projectId);
+      if (!allowed) return res.status(403).json({ error: 'Accès refusé' });
+      const b = req.body || {};
+      if (!b.title || !b.proposed_date) return res.status(400).json({ error: 'Titre et date proposée requis.' });
+      const payload = {
+        project_id: projectId,
+        client_id: c.id,
+        type: ['audience','rdv','consultation','autre'].includes(b.type) ? b.type : 'rdv',
+        title: String(b.title).trim().slice(0, 240),
+        proposed_date: b.proposed_date,
+        alternative_date: b.alternative_date || null,
+        message: b.message ? String(b.message).slice(0, 4000) : null,
+        status: 'pending',
+      };
+      const { data, error } = await supabase.from('case_event_requests').insert(payload).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      sendWhatsApp(`📅 *Demande RDV client (Afrilex)*\n👤 ${c.name}\n📁 Dossier #${projectId}\n📋 ${payload.title}\n🕒 Proposé : ${new Date(payload.proposed_date).toLocaleString('fr-FR')}${payload.alternative_date ? `\n🕒 Alt. : ${new Date(payload.alternative_date).toLocaleString('fr-FR')}` : ''}${payload.message ? `\n💬 ${payload.message.slice(0, 200)}` : ''}\n\n🔗 /bureau/projets`);
+      return res.json({ success: true, request: data });
+    }
+    if (action === 'my_event_requests' && req.method === 'GET') {
+      const projectId = +id;
+      const allowed = await clientHasAccessToCase(c.id, projectId) || (c.project_id === projectId);
+      if (!allowed) return res.status(403).json({ error: 'Accès refusé' });
+      const { data, error } = await supabase
+        .from('case_event_requests')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('client_id', c.id)
+        .order('created_at', { ascending: false });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data ?? []);
     }
 
     // ── Le client envoie une pièce au cabinet ─────────────────────────────────

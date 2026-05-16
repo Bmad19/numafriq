@@ -112,6 +112,45 @@ export type ClientCaseDetail = {
   documents: ClientCaseDocument[];
 };
 
+export type ClientCaseInvoice = {
+  id: number;
+  invoice_number?: string | null;
+  title: string;
+  description?: string | null;
+  amount: number;
+  currency: string;
+  status: 'envoyee' | 'partiellement_payee' | 'payee' | 'annulee';
+  due_date?: string | null;
+  sent_at?: string | null;
+  paid_amount: number;
+  paid_at?: string | null;
+  notes_client?: string | null;
+  created_at: string;
+};
+
+export type ClientCasePayment = {
+  id: number;
+  invoice_id: number;
+  amount: number;
+  paid_at: string;
+  method: string;
+  reference?: string | null;
+};
+
+export type ClientEventRequest = {
+  id: number;
+  type: 'audience' | 'rdv' | 'consultation' | 'autre';
+  title: string;
+  proposed_date: string;
+  alternative_date?: string | null;
+  message?: string | null;
+  status: 'pending' | 'accepted' | 'rescheduled' | 'refused' | 'cancelled';
+  decided_at?: string | null;
+  decided_message?: string | null;
+  scheduled_event_id?: number | null;
+  created_at: string;
+};
+
 export const clientCasesApi = {
   list: () => request<{ cases: ClientCaseSummary[] }>('cases.php', 'GET', undefined, { action: 'list' }),
   get:  (projectId: number) => request<ClientCaseDetail>('cases.php', 'GET', undefined, { action: 'get', id: String(projectId) }),
@@ -119,6 +158,10 @@ export const clientCasesApi = {
     title: string; kind?: string; description?: string; filename?: string;
     mime: string; data_base64: string;
   }) => request<{ success: boolean; document: ClientCaseDocument }>('cases.php', 'POST', payload, { action: 'upload_document', id: String(projectId) }),
+  invoices: (projectId: number) => request<{ invoices: ClientCaseInvoice[]; payments: ClientCasePayment[] }>('cases.php', 'GET', undefined, { action: 'invoices', id: String(projectId) }),
+  requestEvent: (projectId: number, payload: { type?: string; title: string; proposed_date: string; alternative_date?: string; message?: string }) =>
+    request<{ success: boolean; request: ClientEventRequest }>('cases.php', 'POST', payload, { action: 'request_event', id: String(projectId) }),
+  myEventRequests: (projectId: number) => request<ClientEventRequest[]>('cases.php', 'GET', undefined, { action: 'my_event_requests', id: String(projectId) }),
   /** Téléchargement document (auth via header → blob URL → ouvre nouvel onglet). */
   openDocument: async (docId: number, suggestedName?: string): Promise<void> => {
     const url = new URL(`${BASE}/cases.php`, window.location.origin);
