@@ -180,6 +180,45 @@ export const clientCasesApi = {
     }
     setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
   },
+
+  // ── Signatures électroniques ────────────────────────────────────────────
+  signaturesPending: () => request<ClientSignature[]>('cases.php', 'GET', undefined, { action: 'signatures_pending' }),
+  signaturesHistory: () => request<ClientSignature[]>('cases.php', 'GET', undefined, { action: 'signatures_history' }),
+  sign: (sigId: number, payload: { full_name: string; accept: boolean }) =>
+    request<{ success: boolean; signed_at: string; hash: string }>('cases.php', 'POST', payload, { action: 'signature_sign', id: String(sigId) }),
+  refuse: (sigId: number, reason?: string) =>
+    request<{ success: boolean }>('cases.php', 'POST', { reason }, { action: 'signature_refuse', id: String(sigId) }),
+
+  /** Téléchargement PDF facture (auth via header → download direct). */
+  downloadInvoicePdf: async (invoiceId: number, suggestedName?: string): Promise<void> => {
+    const url = new URL(`${BASE}/cases.php`, window.location.origin);
+    url.searchParams.set('action', 'invoice_pdf');
+    url.searchParams.set('id', String(invoiceId));
+    const token = localStorage.getItem('client_token') ?? '';
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`Erreur ${res.status}`);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl; a.download = suggestedName || `facture-${invoiceId}.pdf`; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  },
+};
+
+export type ClientSignature = {
+  id: number;
+  project_id: number;
+  document_id?: number | null;
+  title: string;
+  content_text?: string;
+  status: 'pending' | 'signed' | 'refused' | 'cancelled' | 'expired';
+  signed_at?: string | null;
+  signed_name?: string | null;
+  expires_at?: string | null;
+  created_at: string;
+  case_name?: string | null;
+  case_number?: string | null;
 };
 
 // For agents

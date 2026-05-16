@@ -34,6 +34,8 @@ let nodemailer;
 try { nodemailer = require('nodemailer'); } catch { nodemailer = null; }
 let simpleParser;
 try { ({ simpleParser } = require('mailparser')); } catch { simpleParser = null; }
+let PDFDocument;
+try { PDFDocument = require('pdfkit'); } catch { PDFDocument = null; }
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 const SUPABASE_URL  = process.env.SUPABASE_URL  || '';
@@ -792,6 +794,116 @@ const CASE_DOC_MIMES = new Set([
 ]);
 
 function caseDocBytea(buf) { return '\\x' + buf.toString('hex'); }
+
+/** Génère un PDF de facture (Buffer) — design sobre A4 portrait. */
+async function buildInvoicePdfBuffer({ invoice, payments, project, clients }) {
+  if (!PDFDocument) throw new Error('Module pdfkit absent — npm install pdfkit');
+  return await new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ size: 'A4', margin: 40 });
+      const chunks = [];
+      doc.on('data', (c) => chunks.push(c));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      // En-tête cabinet
+      doc.fontSize(20).fillColor('#1a1a1a').font('Helvetica-Bold').text('AFRILEX CONSEIL', { align: 'left' });
+      doc.fontSize(9).fillColor('#666').font('Helvetica').text('Cabinet d\'avocats — droit des affaires & contentieux', { align: 'left' });
+      doc.text('Ouagadougou, Burkina Faso · cabinet@afrilexconseil.com · +226 52 20 91 91');
+      doc.moveDown(0.5);
+      doc.strokeColor('#cc6644').lineWidth(2).moveTo(40, doc.y).lineTo(555, doc.y).stroke();
+      doc.moveDown(1.2);
+
+      // Titre + n° facture
+      doc.fontSize(22).fillColor('#cc6644').font('Helvetica-Bold').text('FACTURE', { align: 'right' });
+      doc.fontSize(10).fillColor('#333').font('Helvetica');
+      doc.text(`N° ${invoice.invoice_number || '—'}`, { align: 'right' });
+      doc.text(`Date d'émission : ${invoice.sent_at ? new Date(invoice.sent_at).toLocaleDateString('fr-FR') : new Date(invoice.created_at).toLocaleDateString('fr-FR')}`, { align: 'right' });
+      if (invoice.due_date) doc.text(`Échéance : ${new Date(invoice.due_date).toLocaleDateString('fr-FR')}`, { align: 'right' });
+      doc.moveDown(2);
+
+      // Client(s) destinataire(s)
+      doc.fontSize(10).font('Helvetica-Bold').fillColor('#1a1a1a').text('FACTURÉ À :');
+      doc.font('Helvetica').fillColor('#333');
+      if (clients && clients.length > 0) {
+        for (const c of clients) {
+          doc.text(c.name + (c.company ? ` (${c.company})` : ''));
+          if (c.email) doc.text(c.email);
+          if (c.phone) doc.text(c.phone);
+        }
+      } else {
+        doc.text('—');
+      }
+      doc.moveDown(0.8);
+
+      // Référence dossier
+      doc.font('Helvetica-Bold').text('DOSSIER :', { continued: true }).font('Helvetica').text(` ${project?.case_number || '—'} — ${project?.name || ''}`);
+      doc.moveDown(1.5);
+
+      // Tableau — ligne unique (intitulé + montant)
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('#fff');
+      doc.rect(40, doc.y, 515, 24).fill('#cc6644');
+      const ty = doc.y - 22;
+      doc.fillColor('#fff').text('DÉSIGNATION', 50, ty + 6);
+      doc.text('MONTANT', 450, ty + 6, { width: 95, align: 'right' });
+      doc.moveDown(2);
+
+      const fmtMoney = (n) => `${Math.round(Number(n) || 0).toLocaleString('fr-FR')} ${invoice.currency === 'XOF' ? 'FCFA' : invoice.currency}`;
+
+      doc.fillColor('#1a1a1a').font('Helvetica');
+      const itemY = doc.y;
+      doc.fontSize(10).font('Helvetica-Bold').text(invoice.title, 50, itemY, { width: 380 });
+      if (invoice.description) {
+        doc.fontSize(9).font('Helvetica').fillColor('#666').text(invoice.description, 50, doc.y, { width: 380 });
+      }
+      doc.fontSize(11).font('Helvetica-Bold').fillColor('#1a1a1a');
+      doc.text(fmtMoney(invoice.amount), 450, itemY, { width: 95, align: 'right' });
+
+      doc.moveDown(2);
+      doc.strokeColor('#ccc').lineWidth(0.5).moveTo(40, doc.y).lineTo(555, doc.y).stroke();
+      doc.moveDown(0.5);
+
+      // Totaux
+      const totalDue = Number(invoice.amount) - Number(invoice.paid_amount || 0);
+      const block = (label, val, color = '#1a1a1a', bold = false) => {
+        const y = doc.y;
+        doc.fontSize(10).font(bold ? 'Helvetica-Bold' : 'Helvetica').fillColor(color);
+        doc.text(label, 350, y, { width: 100, align: 'right' });
+        doc.text(val, 450, y, { width: 95, align: 'right' });
+        doc.moveDown(0.4);
+      };
+      block('Total HT/TTC', fmtMoney(invoice.amount), '#1a1a1a', true);
+      if (Number(invoice.paid_amount || 0) > 0) block('Déjà réglé', '- ' + fmtMoney(invoice.paid_amount), '#3a8c3a');
+      block('SOLDE DÛ', fmtMoney(totalDue), totalDue > 0 ? '#cc6644' : '#3a8c3a', true);
+
+      // Paiements détail
+      if (payments && payments.length > 0) {
+        doc.moveDown(1);
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('#1a1a1a').text('Historique des paiements :');
+        doc.font('Helvetica').fontSize(9).fillColor('#333');
+        const methodLabels = { especes: 'Espèces', virement: 'Virement', mobile_money: 'Mobile Money', cheque: 'Chèque', carte: 'Carte', autre: 'Autre' };
+        for (const p of payments) {
+          doc.text(`• ${new Date(p.paid_at).toLocaleDateString('fr-FR')} — ${fmtMoney(p.amount)} (${methodLabels[p.method] || p.method}${p.reference ? ` · réf ${p.reference}` : ''})`);
+        }
+      }
+
+      // Note client
+      if (invoice.notes_client) {
+        doc.moveDown(1.5);
+        doc.fontSize(9).fillColor('#666').font('Helvetica-Oblique').text('Note : ' + invoice.notes_client, { width: 515 });
+      }
+
+      // Footer
+      doc.fontSize(8).fillColor('#999').font('Helvetica');
+      doc.text('Afrilex Conseil SARL · cabinet@afrilexconseil.com · Ouagadougou (Burkina Faso)',
+        40, 780, { align: 'center', width: 515 });
+      doc.text(`Document généré le ${new Date().toLocaleString('fr-FR')}`, 40, 795, { align: 'center', width: 515 });
+
+      doc.end();
+    } catch (e) { reject(e); }
+  });
+}
+
 function caseDocBufFromRow(d) {
   if (!d) return null;
   if (typeof d === 'string' && d.startsWith('\\x')) return Buffer.from(d.slice(2), 'hex');
@@ -1287,6 +1399,183 @@ app.all('/api/bureau/cases.php', async (req, res) => {
         if (!a || a.user_id !== u.id) return res.status(403).json({ error: 'Vous ne pouvez supprimer que vos propres diligences.' });
       }
       const { error } = await supabase.from('case_activities').delete().eq('id', activityId);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    // ── PDF FACTURE (téléchargement) ─────────────────────────────────────────
+    if (action === 'invoice_pdf' && req.method === 'GET') {
+      const invoiceId = +id;
+      const { data: invoice } = await supabase.from('case_invoices').select('*').eq('id', invoiceId).maybeSingle();
+      if (!invoice) return res.status(404).send('Facture introuvable');
+      const [{ data: project }, { data: payments }, { data: links }] = await Promise.all([
+        supabase.from('projects').select('id, name, case_number, practice_area').eq('id', invoice.project_id).maybeSingle(),
+        supabase.from('case_payments').select('*').eq('invoice_id', invoiceId).order('paid_at'),
+        supabase.from('case_clients').select('client:clients(name,email,phone,company)').eq('project_id', invoice.project_id),
+      ]);
+      const clients = (links ?? []).map((l) => l.client).filter(Boolean);
+      try {
+        const buf = await buildInvoicePdfBuffer({ invoice, payments: payments ?? [], project, clients });
+        const filename = `facture-${invoice.invoice_number || invoice.id}.pdf`;
+        res.set({
+          'Content-Type': 'application/pdf',
+          'Content-Length': String(buf.length),
+          'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+          'Cache-Control': 'no-store, private',
+        });
+        return res.end(buf);
+      } catch (e) {
+        console.error('invoice_pdf', e);
+        return res.status(500).send(String(e?.message || e));
+      }
+    }
+
+    // ── SIGNATURES électroniques ─────────────────────────────────────────────
+    if (action === 'signatures_list' && req.method === 'GET') {
+      const projectId = +id;
+      const { data, error } = await supabase
+        .from('case_signatures')
+        .select('*, client:clients!client_id(name,email), creator:users!created_by(full_name)')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json((data ?? []).map((s) => ({
+        ...s,
+        client_name: s.client?.name ?? null, client_email: s.client?.email ?? null,
+        created_by_name: s.creator?.full_name ?? null,
+        client: undefined, creator: undefined,
+        // ne PAS renvoyer signed_ip / signed_user_agent au front (sensibles, juste preuve back)
+      })));
+    }
+    if (action === 'signature_create' && req.method === 'POST') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const projectId = +id;
+      const b = req.body || {};
+      if (!b.title || !b.content_text || !b.client_id) return res.status(400).json({ error: 'Titre, contenu et client requis.' });
+      const payload = {
+        project_id: projectId,
+        document_id: b.document_id ? +b.document_id : null,
+        client_id: +b.client_id,
+        title: String(b.title).slice(0, 240),
+        content_text: String(b.content_text).slice(0, 20000),
+        expires_at: b.expires_at || null,
+        created_by: u.id,
+      };
+      const { data, error } = await supabase.from('case_signatures').insert(payload).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      // Notif mail au client
+      (async () => {
+        const { data: cli } = await supabase.from('clients').select('email,name').eq('id', payload.client_id).maybeSingle();
+        if (cli?.email) {
+          await notifyClientByEmail({
+            to: cli.email,
+            subject: `Afrilex Conseil — Document à signer : ${payload.title}`,
+            text: `Bonjour ${cli.name || ''},\n\nUn document attend votre signature dans votre espace client :\n\n📄 ${payload.title}\n\nConnectez-vous pour le consulter et signer : https://www.afrilexconseil.com/client\n\nCordialement,\nL'équipe Afrilex Conseil`,
+          });
+        }
+      })().catch(() => {});
+      return res.json({ success: true, signature: data });
+    }
+    if (action === 'signature_cancel' && req.method === 'POST') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const sigId = +id;
+      const { error } = await supabase.from('case_signatures').update({ status: 'cancelled' }).eq('id', sigId).eq('status', 'pending');
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+    if (action === 'signature_delete' && req.method === 'DELETE') {
+      if (!isSuperAdmin) return res.status(403).json({ error: 'Réservé au super administrateur.' });
+      const { error } = await supabase.from('case_signatures').delete().eq('id', +id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    // ── TEMPLATES de dossier ─────────────────────────────────────────────────
+    if (action === 'templates_list' && req.method === 'GET') {
+      const { data, error } = await supabase.from('case_templates').select('*').eq('is_active', true).order('name');
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json(data ?? []);
+    }
+    if (action === 'template_apply' && req.method === 'POST') {
+      // Crée un projet from template + génère ses milestones
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const templateId = +id;
+      const b = req.body || {};
+      const { data: tpl } = await supabase.from('case_templates').select('*').eq('id', templateId).maybeSingle();
+      if (!tpl) return res.status(404).json({ error: 'Modèle introuvable' });
+      // Création projet
+      const { data: project, error: pErr } = await supabase.from('projects').insert({
+        name: String(b.name || tpl.name).slice(0, 240),
+        client: String(b.client || '').slice(0, 240) || 'À renseigner',
+        description: b.description || tpl.description || null,
+        status: tpl.default_status || 'en_cours',
+        priority: tpl.default_priority || 'normale',
+        practice_area: tpl.practice_area || null,
+        case_number: b.case_number ? String(b.case_number).slice(0, 80) : null,
+        created_by: u.id,
+      }).select().single();
+      if (pErr) return res.status(500).json({ error: pErr.message });
+      // Génération milestones
+      const baseDate = new Date(b.start_date || new Date());
+      const ms = (tpl.milestones_json || []).map((m) => {
+        const due = new Date(baseDate);
+        due.setDate(due.getDate() + (Number(m.due_offset_days) || 0));
+        return {
+          project_id: project.id,
+          title: m.title, description: m.description || null,
+          due_date: due.toISOString().slice(0, 10),
+          order_index: Number(m.order_index) || 0,
+          visible_to_client: m.visible_to_client !== false,
+          status: 'a_faire',
+          created_by: u.id,
+        };
+      });
+      if (ms.length) await supabase.from('case_milestones').insert(ms);
+      // Génération events
+      const evs = (tpl.events_json || []).map((e) => {
+        const sched = new Date(baseDate);
+        sched.setDate(sched.getDate() + (Number(e.scheduled_offset_days) || 0));
+        return {
+          project_id: project.id,
+          type: e.type || 'rdv', title: e.title, location: e.location || null,
+          scheduled_at: sched.toISOString(),
+          duration_minutes: Number(e.duration_minutes) || 60,
+          visible_to_client: e.visible_to_client !== false,
+          created_by: u.id,
+        };
+      });
+      if (evs.length) await supabase.from('case_events').insert(evs);
+      return res.json({ success: true, project, milestones_count: ms.length, events_count: evs.length });
+    }
+    if (action === 'template_create' && req.method === 'POST') {
+      if (!isSuperAdmin) return res.status(403).json({ error: 'Réservé au super administrateur.' });
+      const b = req.body || {};
+      const payload = {
+        name: String(b.name || '').slice(0, 240),
+        description: b.description ? String(b.description).slice(0, 4000) : null,
+        practice_area: b.practice_area || null,
+        default_status: b.default_status || 'en_cours',
+        default_priority: b.default_priority || 'normale',
+        milestones_json: b.milestones_json || [],
+        events_json: b.events_json || [],
+        is_active: b.is_active !== false,
+        created_by: u.id,
+      };
+      if (!payload.name) return res.status(400).json({ error: 'Nom requis' });
+      const { data, error } = await supabase.from('case_templates').insert(payload).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, template: data });
+    }
+    if (action === 'template_update' && req.method === 'PUT') {
+      if (!isSuperAdmin) return res.status(403).json({ error: 'Réservé au super administrateur.' });
+      const tplId = +id;
+      const { error } = await supabase.from('case_templates').update(req.body || {}).eq('id', tplId);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+    if (action === 'template_delete' && req.method === 'DELETE') {
+      if (!isSuperAdmin) return res.status(403).json({ error: 'Réservé au super administrateur.' });
+      const { error } = await supabase.from('case_templates').delete().eq('id', +id);
       if (error) return res.status(500).json({ error: error.message });
       return res.json({ success: true });
     }
@@ -3398,6 +3687,122 @@ app.get('/api/bureau/clients.php', async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// CALENDRIER GLOBAL — tous les events de tous les dossiers (bureau)
+// ═══════════════════════════════════════════════════════════════════════════
+app.get('/api/bureau/calendar.php', async (req, res) => {
+  try {
+    const u = await authGuard(req, res); if (!u) return;
+    if (!userHasPermission(u, 'projects') && !userHasPermission(u, 'cases')) {
+      return res.status(403).json({ error: 'Permission requise' });
+    }
+    const from = req.query.from ? String(req.query.from) : new Date(Date.now() - 30 * 86400e3).toISOString().slice(0, 10);
+    const to = req.query.to ? String(req.query.to) : new Date(Date.now() + 60 * 86400e3).toISOString().slice(0, 10);
+    const { data: events, error } = await supabase
+      .from('case_events')
+      .select('id, project_id, type, title, scheduled_at, duration_minutes, location, visible_to_client, status, project:projects!project_id(id, name, case_number, status, priority)')
+      .gte('scheduled_at', from + 'T00:00:00')
+      .lte('scheduled_at', to + 'T23:59:59')
+      .order('scheduled_at');
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({
+      from, to,
+      events: (events ?? []).map((e) => ({
+        id: e.id, project_id: e.project_id, type: e.type, title: e.title,
+        scheduled_at: e.scheduled_at, duration_minutes: e.duration_minutes,
+        location: e.location, status: e.status, visible_to_client: e.visible_to_client,
+        case_name: e.project?.name ?? null, case_number: e.project?.case_number ?? null,
+        case_priority: e.project?.priority ?? null,
+      })),
+    });
+  } catch (e) {
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FINANCE — vue d'ensemble cabinet (factures, encaissements, prévisions)
+// ═══════════════════════════════════════════════════════════════════════════
+app.get('/api/bureau/finance.php', async (req, res) => {
+  try {
+    const u = await authGuard(req, res); if (!u) return;
+    if (!userHasPermission(u, 'accounting') && !userHasPermission(u, 'cases')) {
+      return res.status(403).json({ error: 'Permission requise' });
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const monthStart = today.slice(0, 8) + '01';
+    const m1Start = (() => { const d = new Date(monthStart); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 10); })();
+    const m2Start = (() => { const d = new Date(monthStart); d.setMonth(d.getMonth() - 2); return d.toISOString().slice(0, 10); })();
+    const m3Start = (() => { const d = new Date(monthStart); d.setMonth(d.getMonth() - 3); return d.toISOString().slice(0, 10); })();
+
+    const [{ data: invoices }, { data: payments }] = await Promise.all([
+      supabase.from('case_invoices').select('id, project_id, invoice_number, title, amount, paid_amount, currency, status, due_date, sent_at, created_at, project:projects!project_id(name, case_number)').order('created_at', { ascending: false }),
+      supabase.from('case_payments').select('id, invoice_id, amount, paid_at').order('paid_at', { ascending: false }),
+    ]);
+
+    const isOverdue = (inv) => inv.due_date && inv.due_date < today && inv.status !== 'payee' && inv.status !== 'annulee';
+    const overdueList = (invoices ?? []).filter(isOverdue).map((i) => ({
+      id: i.id, project_id: i.project_id, invoice_number: i.invoice_number, title: i.title,
+      amount: Number(i.amount), paid_amount: Number(i.paid_amount || 0),
+      remaining: Number(i.amount) - Number(i.paid_amount || 0),
+      currency: i.currency, due_date: i.due_date, status: i.status,
+      case_name: i.project?.name ?? null, case_number: i.project?.case_number ?? null,
+      days_overdue: Math.floor((new Date(today) - new Date(i.due_date)) / 86400e3),
+    }));
+
+    const totalInvoiced = (invoices ?? []).filter((i) => i.status !== 'brouillon' && i.status !== 'annulee').reduce((s, i) => s + Number(i.amount), 0);
+    const totalCollected = (invoices ?? []).reduce((s, i) => s + Number(i.paid_amount || 0), 0);
+    const totalOutstanding = overdueList.reduce((s, i) => s + i.remaining, 0) + (invoices ?? []).filter((i) => !isOverdue(i) && i.status !== 'payee' && i.status !== 'brouillon' && i.status !== 'annulee').reduce((s, i) => s + (Number(i.amount) - Number(i.paid_amount || 0)), 0);
+
+    const monthlyCollected = (label, start, end) => ({
+      label,
+      amount: (payments ?? []).filter((p) => p.paid_at && p.paid_at >= start && p.paid_at < end).reduce((s, p) => s + Number(p.amount), 0),
+    });
+    const nextMonth = (d) => { const x = new Date(d); x.setMonth(x.getMonth() + 1); return x.toISOString().slice(0, 10); };
+
+    const trend = [
+      monthlyCollected(m3Start.slice(0, 7), m3Start, m2Start),
+      monthlyCollected(m2Start.slice(0, 7), m2Start, m1Start),
+      monthlyCollected(m1Start.slice(0, 7), m1Start, monthStart),
+      monthlyCollected(monthStart.slice(0, 7), monthStart, nextMonth(monthStart)),
+    ];
+
+    const byProject = {};
+    for (const o of overdueList) {
+      const k = String(o.project_id);
+      if (!byProject[k]) byProject[k] = { project_id: o.project_id, case_name: o.case_name, case_number: o.case_number, total: 0, count: 0 };
+      byProject[k].total += o.remaining; byProject[k].count += 1;
+    }
+    const topToCollect = Object.values(byProject).sort((a, b) => b.total - a.total).slice(0, 10);
+
+    const forecast = {};
+    for (const inv of invoices ?? []) {
+      if (!inv.due_date || inv.status === 'payee' || inv.status === 'annulee' || inv.status === 'brouillon') continue;
+      if (isOverdue(inv)) continue;
+      const month = inv.due_date.slice(0, 7);
+      if (!forecast[month]) forecast[month] = 0;
+      forecast[month] += Number(inv.amount) - Number(inv.paid_amount || 0);
+    }
+    const forecastList = Object.entries(forecast).map(([month, amount]) => ({ month, amount })).sort((a, b) => a.month.localeCompare(b.month)).slice(0, 6);
+
+    return res.json({
+      kpis: {
+        total_invoiced: totalInvoiced,
+        total_collected: totalCollected,
+        total_outstanding: totalOutstanding,
+        overdue_count: overdueList.length,
+        overdue_amount: overdueList.reduce((s, o) => s + o.remaining, 0),
+      },
+      overdue: overdueList,
+      trend,
+      top_to_collect: topToCollect,
+      forecast: forecastList,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
+
 // ══════════════════════════════════════════════════════════════════════════════
 // CASES — Vue client (lecture seule des dossiers du client connecté)
 // Filtre tout par visible_to_client / confidential pour ne JAMAIS exposer
@@ -3583,6 +3988,104 @@ app.all('/api/client/cases.php', async (req, res) => {
       if (error) return res.status(500).json({ error: error.message });
       sendWhatsApp(`📎 *Nouvelle pièce client (Afrilex)*\n👤 ${c.name}\n📁 Dossier #${projectId}\n📄 ${payload.title} (${(buf.length/1024).toFixed(0)} Ko)\n\n🔗 /bureau/projets\n⏰ ${new Date().toLocaleString('fr-FR')}`);
       return res.json({ success: true, document: data });
+    }
+
+    // ── SIGNATURES électroniques (côté client) ───────────────────────────
+    if (action === 'signatures_pending' && req.method === 'GET') {
+      // Toutes les signatures en attente pour ce client (tous dossiers)
+      const { data, error } = await supabase
+        .from('case_signatures')
+        .select('id, project_id, document_id, title, content_text, status, expires_at, created_at, project:projects!project_id(name, case_number)')
+        .eq('client_id', c.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json((data ?? []).map((s) => ({
+        ...s,
+        case_name: s.project?.name ?? null, case_number: s.project?.case_number ?? null,
+        project: undefined,
+      })));
+    }
+    if (action === 'signatures_history' && req.method === 'GET') {
+      const { data, error } = await supabase
+        .from('case_signatures')
+        .select('id, project_id, title, status, signed_at, signed_name, created_at, project:projects!project_id(name, case_number)')
+        .eq('client_id', c.id)
+        .in('status', ['signed', 'refused', 'cancelled', 'expired'])
+        .order('signed_at', { ascending: false, nullsFirst: false })
+        .limit(50);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json((data ?? []).map((s) => ({
+        ...s,
+        case_name: s.project?.name ?? null, case_number: s.project?.case_number ?? null,
+        project: undefined,
+      })));
+    }
+    if (action === 'signature_sign' && req.method === 'POST') {
+      const sigId = +id;
+      const b = req.body || {};
+      const fullName = String(b.full_name || '').trim();
+      if (!fullName || fullName.length < 4) return res.status(400).json({ error: 'Veuillez taper votre nom complet (4 caractères minimum).' });
+      if (!b.accept) return res.status(400).json({ error: 'Veuillez accepter pour signer.' });
+      const { data: sig } = await supabase.from('case_signatures').select('*').eq('id', sigId).eq('client_id', c.id).maybeSingle();
+      if (!sig) return res.status(404).json({ error: 'Signature introuvable' });
+      if (sig.status !== 'pending') return res.status(409).json({ error: 'Cette signature n\'est plus en attente.' });
+      if (sig.expires_at && new Date(sig.expires_at) < new Date()) {
+        await supabase.from('case_signatures').update({ status: 'expired' }).eq('id', sigId);
+        return res.status(410).json({ error: 'Cette signature a expiré.' });
+      }
+      const signedAt = new Date().toISOString();
+      const ip = (req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').toString().split(',')[0].trim();
+      const ua = String(req.headers['user-agent'] || '').slice(0, 500);
+      const hash = require('crypto').createHash('sha256').update(`${sig.content_text}|${fullName}|${signedAt}|${ip}`).digest('hex');
+      const { error: uErr } = await supabase.from('case_signatures').update({
+        status: 'signed', signed_at: signedAt, signed_name: fullName,
+        signed_ip: ip, signed_user_agent: ua, signed_hash: hash,
+      }).eq('id', sigId);
+      if (uErr) return res.status(500).json({ error: uErr.message });
+      sendWhatsApp(`✍️ *Signature électronique (Afrilex)*\n👤 ${c.name} (${fullName})\n📄 ${sig.title}\n📁 Dossier #${sig.project_id}\n⏰ ${new Date().toLocaleString('fr-FR')}`);
+      return res.json({ success: true, signed_at: signedAt, hash });
+    }
+    if (action === 'signature_refuse' && req.method === 'POST') {
+      const sigId = +id;
+      const reason = String((req.body || {}).reason || '').slice(0, 1000);
+      const { data: sig } = await supabase.from('case_signatures').select('id,status').eq('id', sigId).eq('client_id', c.id).maybeSingle();
+      if (!sig) return res.status(404).json({ error: 'Signature introuvable' });
+      if (sig.status !== 'pending') return res.status(409).json({ error: 'Cette signature n\'est plus en attente.' });
+      const { error } = await supabase.from('case_signatures').update({
+        status: 'refused', refused_at: new Date().toISOString(), refused_reason: reason,
+      }).eq('id', sigId);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    // ── PDF FACTURE (téléchargement côté client) ─────────────────────────
+    if (action === 'invoice_pdf' && req.method === 'GET') {
+      const invoiceId = +id;
+      const { data: invoice } = await supabase.from('case_invoices').select('*').eq('id', invoiceId).maybeSingle();
+      if (!invoice) return res.status(404).send('Facture introuvable');
+      if (!(await clientHasAccessToCase(c.id, invoice.project_id))) return res.status(403).send('Accès refusé');
+      if (invoice.status === 'brouillon' || invoice.status === 'annulee') return res.status(404).send('Facture indisponible');
+      const [{ data: project }, { data: payments }, { data: links }] = await Promise.all([
+        supabase.from('projects').select('id, name, case_number, practice_area').eq('id', invoice.project_id).maybeSingle(),
+        supabase.from('case_payments').select('*').eq('invoice_id', invoiceId).order('paid_at'),
+        supabase.from('case_clients').select('client:clients(name,email,phone,company)').eq('project_id', invoice.project_id).eq('client_id', c.id),
+      ]);
+      const clients = (links ?? []).map((l) => l.client).filter(Boolean);
+      try {
+        const buf = await buildInvoicePdfBuffer({ invoice, payments: payments ?? [], project, clients });
+        const filename = `facture-${invoice.invoice_number || invoice.id}.pdf`;
+        res.set({
+          'Content-Type': 'application/pdf',
+          'Content-Length': String(buf.length),
+          'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+          'Cache-Control': 'no-store, private',
+        });
+        return res.end(buf);
+      } catch (e) {
+        console.error('client invoice_pdf', e);
+        return res.status(500).send(String(e?.message || e));
+      }
     }
 
     return res.status(404).json({ error: 'Action non trouvée' });

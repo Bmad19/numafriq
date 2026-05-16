@@ -19,11 +19,14 @@ const NAV: NavEntry[] = [
   { to: "/bureau/inbox",         label: "Boîte de réception", icon: <InboxStackIcon />, min: "agent", perm: "leads",      badge: "inbox" },
   { to: "/bureau/assistant",     label: "Assistant",       icon: <SparkIcon />,   min: "agent",       perm: "assistant" },
   { to: "/bureau/projets",       label: "Projets",         icon: <FolderIcon />,  min: "agent",       perm: "projects" },
+  { to: "/bureau/calendrier",    label: "Calendrier",      icon: <CalendarIcon />,min: "agent",       perm: "projects" },
   { to: "/bureau/missions",      label: "Mes missions",    icon: <TaskIcon />,    min: "agent",       perm: "missions" },
   { to: "/bureau/clients",       label: "Messages clients",icon: <InboxIcon />,   min: "agent",       perm: "clients",    badge: "clients" },
   { to: "/bureau/chat",          label: "Chat interne",    icon: <ChatIcon />,    min: "agent",       perm: "chat" },
   { to: "/bureau/rh",            label: "Ressources Hum.", icon: <PeopleIcon />,  min: "agent",       perm: "hr" },
   { to: "/bureau/comptabilite",  label: "Comptabilité",    icon: <ChartIcon />,   min: "admin",       perm: "accounting" },
+  { to: "/bureau/finance",       label: "Tableau financier",icon: <CoinIcon />,   min: "admin",       perm: "accounting" },
+  { to: "/bureau/modeles",       label: "Modèles dossiers",icon: <StackIcon />,   min: "super_admin", perm: "projects" },
   { to: "/bureau/retours",       label: "Retours clients", icon: <StarIcon />,    min: "admin",       perm: "feedback" },
   { to: "/bureau/offres-emploi", label: "Offres d'emploi", icon: <BriefcaseIcon />, min: "admin",     perm: "job_offers" },
   { to: "/bureau/blog",          label: "Blog",            icon: <PencilIcon />,  min: "admin",       perm: "blog" },
@@ -249,6 +252,35 @@ function InboxStackIcon() {
     <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
       <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
       <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />
+    </svg>
+  );
+}
+function CalendarIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  );
+}
+function CoinIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M14.5 9.5a2.5 2.5 0 00-5 0c0 1.4 1.1 2 2.5 2s2.5.6 2.5 2a2.5 2.5 0 11-5 0" />
+      <line x1="12" y1="6" x2="12" y2="8" />
+      <line x1="12" y1="16" x2="12" y2="18" />
+    </svg>
+  );
+}
+function StackIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <polygon points="12 2 22 8 12 14 2 8 12 2" />
+      <polyline points="2 17 12 23 22 17" />
+      <polyline points="2 12 12 18 22 12" />
     </svg>
   );
 }

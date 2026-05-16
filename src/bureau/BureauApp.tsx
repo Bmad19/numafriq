@@ -17,6 +17,9 @@ import { JobOffersAdminPage } from "./pages/JobOffersAdminPage";
 import { BlogAdminPage } from "./pages/BlogAdminPage";
 import { MailboxPage } from "./pages/MailboxPage";
 import { InboxPage } from "./pages/InboxPage";
+import { CalendrierPage } from "./pages/CalendrierPage";
+import { FinancePage } from "./pages/FinancePage";
+import { TemplatesPage } from "./pages/TemplatesPage";
 
 function BureauInner() {
   const { user, loading, mustChangePassword } = useAuth();
@@ -54,6 +57,9 @@ function BureauInner() {
         <Route path="offres-emploi" element={<JobOffersAdminPage />} />
         <Route path="blog"          element={<BlogAdminPage />} />
         <Route path="mailbox"       element={<MailboxPage />} />
+        <Route path="calendrier"    element={<CalendrierPage />} />
+        <Route path="finance"       element={<FinancePage />} />
+        <Route path="modeles"       element={<TemplatesPage />} />
         <Route path="equipe"        element={<EquipePage />} />
         <Route path="parametres"    element={<SettingsPage />} />
         <Route path="*"             element={<Navigate to="overview" replace />} />

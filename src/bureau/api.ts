@@ -161,6 +161,48 @@ export const casesApi = {
     }
     setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
   },
+
+  /** Téléchargement PDF facture (auth via header → download direct). */
+  downloadInvoicePdf: async (invoiceId: number, suggestedName?: string): Promise<void> => {
+    const url = new URL(`${BASE}/cases.php`, window.location.origin);
+    url.searchParams.set('action', 'invoice_pdf');
+    url.searchParams.set('id', String(invoiceId));
+    const token = localStorage.getItem('bureau_token') ?? '';
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`Erreur ${res.status}`);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl; a.download = suggestedName || `facture-${invoiceId}.pdf`; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  },
+
+  // Signatures électroniques
+  signaturesList:   (projectId: number) => request<CaseSignature[]>('cases.php', 'GET', undefined, { action: 'signatures_list', id: String(projectId) }),
+  signatureCreate:  (projectId: number, data: { title: string; content_text: string; client_id: number; document_id?: number; expires_at?: string }) =>
+    request<{ success: boolean; signature: CaseSignature }>('cases.php', 'POST', data, { action: 'signature_create', id: String(projectId) }),
+  signatureCancel:  (sigId: number) => request('cases.php', 'POST', {}, { action: 'signature_cancel', id: String(sigId) }),
+  signatureDelete:  (sigId: number) => request('cases.php', 'DELETE', undefined, { action: 'signature_delete', id: String(sigId) }),
+
+  // Templates de dossier
+  templatesList:    () => request<CaseTemplate[]>('cases.php', 'GET', undefined, { action: 'templates_list', id: '0' }),
+  templateApply:    (templateId: number, data: { name?: string; client?: string; description?: string; case_number?: string; start_date?: string }) =>
+    request<{ success: boolean; project: Project; milestones_count: number; events_count: number }>('cases.php', 'POST', data, { action: 'template_apply', id: String(templateId) }),
+  templateCreate:   (data: Partial<CaseTemplate>) => request<{ success: boolean; template: CaseTemplate }>('cases.php', 'POST', data, { action: 'template_create', id: '0' }),
+  templateUpdate:   (id: number, data: Partial<CaseTemplate>) => request('cases.php', 'PUT', data, { action: 'template_update', id: String(id) }),
+  templateDelete:   (id: number) => request('cases.php', 'DELETE', undefined, { action: 'template_delete', id: String(id) }),
+};
+
+// ── Calendrier global ────────────────────────────────────────────────────────
+export const calendarApi = {
+  range: (from: string, to: string) =>
+    request<{ from: string; to: string; events: CalendarEvent[] }>('calendar.php', 'GET', undefined, { from, to }),
+};
+
+// ── Finance (vue d'ensemble cabinet) ─────────────────────────────────────────
+export const financeApi = {
+  overview: () => request<FinanceOverview>('finance.php', 'GET'),
 };
 
 // ── Missions ─────────────────────────────────────────────────────────────────
@@ -422,6 +464,78 @@ export type CaseActivity = {
   invoice_id?: number | null;
   created_at: string;
   updated_at?: string;
+};
+
+export type CaseSignature = {
+  id: number;
+  project_id: number;
+  document_id?: number | null;
+  client_id: number;
+  client_name?: string | null;
+  client_email?: string | null;
+  title: string;
+  content_text: string;
+  status: 'pending' | 'signed' | 'refused' | 'cancelled' | 'expired';
+  signed_at?: string | null;
+  signed_name?: string | null;
+  signed_hash?: string | null;
+  refused_at?: string | null;
+  refused_reason?: string | null;
+  expires_at?: string | null;
+  created_by?: number | null;
+  created_by_name?: string | null;
+  created_at: string;
+  updated_at?: string;
+};
+
+export type CaseTemplate = {
+  id: number;
+  name: string;
+  description?: string | null;
+  practice_area?: string | null;
+  default_status: string;
+  default_priority: string;
+  milestones_json: Array<{ title: string; description?: string; due_offset_days: number; order_index: number; visible_to_client?: boolean }>;
+  events_json: Array<{ type?: string; title: string; location?: string; scheduled_offset_days: number; duration_minutes?: number; visible_to_client?: boolean }>;
+  is_active: boolean;
+  created_by?: number | null;
+  created_at: string;
+  updated_at?: string;
+};
+
+export type CalendarEvent = {
+  id: number;
+  project_id: number;
+  type: string;
+  title: string;
+  scheduled_at: string;
+  duration_minutes?: number | null;
+  location?: string | null;
+  status?: string | null;
+  visible_to_client?: boolean;
+  case_name?: string | null;
+  case_number?: string | null;
+  case_priority?: string | null;
+};
+
+export type FinanceOverview = {
+  kpis: {
+    total_invoiced: number;
+    total_collected: number;
+    total_outstanding: number;
+    overdue_count: number;
+    overdue_amount: number;
+  };
+  overdue: Array<{
+    id: number; project_id: number; invoice_number?: string | null; title: string;
+    amount: number; paid_amount: number; remaining: number;
+    currency: string; due_date: string; status: string;
+    case_name?: string | null; case_number?: string | null;
+    days_overdue: number;
+  }>;
+  trend: Array<{ label: string; amount: number }>;
+  top_to_collect: Array<{ project_id: number; case_name?: string | null; case_number?: string | null; total: number; count: number }>;
+  forecast: Array<{ month: string; amount: number }>;
 };
 
 export type ProjectStats = { total: number; en_cours: number; termine: number; en_pause: number; budget_total: number };

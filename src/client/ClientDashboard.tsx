@@ -10,6 +10,7 @@ import {
   type ClientCaseInvoice,
   type ClientCasePayment,
   type ClientEventRequest,
+  type ClientSignature,
 } from "./api";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -96,7 +97,7 @@ function fileToB64(file: File): Promise<{ data_base64: string; mime: string; fil
   });
 }
 
-type Tab = "messages" | "cases" | "settings";
+type Tab = "messages" | "cases" | "signatures" | "settings";
 
 export function ClientDashboard() {
   const { client, logout, refresh } = useClient();
@@ -114,6 +115,9 @@ export function ClientDashboard() {
   const lastIdRef = useRef(0);
   const pollRef = useRef<ReturnType<typeof setInterval>>();
 
+  // Signatures
+  const [pendingSignatures, setPendingSignatures] = useState(0);
+
   // Settings
   const [form, setForm] = useState({ name: client?.name ?? "", company: client?.company ?? "", phone: client?.phone ?? "" });
   const [pwForm, setPwForm] = useState({ old: "", new: "", confirm: "" });
@@ -127,6 +131,12 @@ export function ClientDashboard() {
     finally { setCasesLoading(false); }
   }
   useEffect(() => { loadCases(); }, []);
+
+  async function loadPendingSignaturesCount() {
+    try { const r = await clientCasesApi.signaturesPending(); setPendingSignatures(r.length); }
+    catch { /* ignore */ }
+  }
+  useEffect(() => { loadPendingSignaturesCount(); const t = setInterval(loadPendingSignaturesCount, 30000); return () => clearInterval(t); }, []);
 
   async function loadMsgs(initial = false) {
     const since = initial ? undefined : lastIdRef.current;
@@ -163,10 +173,11 @@ export function ClientDashboard() {
   }
 
   const NAV: { tab: Tab; label: string; icon: string; badge?: number }[] = useMemo(() => [
-    { tab: "cases",    label: "Mes dossiers", icon: "📁" },
-    { tab: "messages", label: "Messages",     icon: "💬", badge: unread > 0 ? unread : undefined },
-    { tab: "settings", label: "Profil",       icon: "⚙️" },
-  ], [unread]);
+    { tab: "cases",      label: "Mes dossiers", icon: "📁" },
+    { tab: "signatures", label: "À signer",     icon: "✍️", badge: pendingSignatures > 0 ? pendingSignatures : undefined },
+    { tab: "messages",   label: "Messages",     icon: "💬", badge: unread > 0 ? unread : undefined },
+    { tab: "settings",   label: "Profil",       icon: "⚙️" },
+  ], [unread, pendingSignatures]);
 
   return (
     <div className="min-h-screen bg-ink flex flex-col">
@@ -219,6 +230,10 @@ export function ClientDashboard() {
           openCaseId != null
             ? <CaseDetailView caseId={openCaseId} onBack={() => setOpenCaseId(null)} />
             : <CasesList cases={cases} loading={casesLoading} onOpen={setOpenCaseId} onMessage={() => setTab("messages")} />
+        )}
+
+        {tab === "signatures" && (
+          <ClientSignaturesPane onCountChange={setPendingSignatures} />
         )}
 
         {tab === "messages" && (
@@ -635,6 +650,15 @@ function ClientInvoicesPane({ invoices, payments }: { invoices: ClientCaseInvoic
                     </div>
                     {inv.notes_client && <p className="mt-2 text-xs text-white/65 italic border-l-2 border-lime/30 pl-3">« {inv.notes_client} »</p>}
                   </div>
+                  <div className="shrink-0">
+                    <button
+                      onClick={() => clientCasesApi.downloadInvoicePdf(inv.id, `facture-${inv.invoice_number ?? inv.id}.pdf`).catch((e) => alert(String(e)))}
+                      title="Télécharger la facture en PDF"
+                      className="rounded-lg border border-coral/30 bg-coral/10 px-3 py-1.5 text-xs font-bold text-coral hover:bg-coral/20"
+                    >
+                      ↓ PDF
+                    </button>
+                  </div>
                 </div>
                 {invPays.length > 0 && (
                   <details className="mt-2 text-[11px] text-white/55">
@@ -920,5 +944,169 @@ function SettingsPane(props: {
         </button>
       </div>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Signatures électroniques (Client)
+// ─────────────────────────────────────────────────────────────────────────────
+function ClientSignaturesPane({ onCountChange }: { onCountChange: (n: number) => void }) {
+  const [pending, setPending] = useState<ClientSignature[]>([]);
+  const [history, setHistory] = useState<ClientSignature[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [active, setActive] = useState<ClientSignature | null>(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const [p, h] = await Promise.all([
+        clientCasesApi.signaturesPending(),
+        clientCasesApi.signaturesHistory(),
+      ]);
+      setPending(p); setHistory(h);
+      onCountChange(p.length);
+    } finally { setLoading(false); }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="text-lg font-bold text-white">À signer ({pending.length})</h2>
+        {loading && <p className="text-sm text-white/45 mt-2">Chargement…</p>}
+        {!loading && pending.length === 0 && (
+          <div className="mt-3 rounded-2xl border border-white/[0.08] bg-white/[0.02] py-8 text-center text-sm text-white/55">
+            ✓ Aucun document n'attend votre signature.
+          </div>
+        )}
+        <ul className="mt-3 space-y-2">
+          {pending.map((s) => (
+            <li key={s.id} className="rounded-2xl border border-amber-500/30 bg-amber-500/[0.06] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <span className="rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-200">En attente</span>
+                    {s.case_number && <span className="text-[10px] text-white/55">📁 {s.case_number}</span>}
+                  </div>
+                  <p className="font-semibold text-white">{s.title}</p>
+                  {s.case_name && <p className="text-xs text-white/55 mt-0.5">Dossier : {s.case_name}</p>}
+                  {s.expires_at && <p className="text-[11px] text-amber-200/85 mt-1">⏰ Expire le {fmtDate(s.expires_at)}</p>}
+                </div>
+                <button onClick={() => setActive(s)} className="shrink-0 rounded-xl bg-lime px-4 py-2 text-xs font-bold text-ink hover:brightness-110">
+                  Lire & signer
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {history.length > 0 && (
+        <div>
+          <h2 className="text-lg font-bold text-white">Historique</h2>
+          <ul className="mt-3 space-y-1.5">
+            {history.map((s) => {
+              const cls = s.status === "signed" ? "border-lime/30 bg-lime/[0.05] text-lime" : "border-coral/30 bg-coral/[0.05] text-coral";
+              return (
+                <li key={s.id} className="rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 flex items-center justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{s.title}</p>
+                    <p className="text-[11px] text-white/50">{s.case_name ?? ""} · {s.signed_at ? `signé le ${fmtDate(s.signed_at)}` : `créé le ${fmtDate(s.created_at)}`}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${cls}`}>{s.status === "signed" ? "Signé" : s.status === "refused" ? "Refusé" : "Clos"}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {active && <SignatureModal signature={active} onClose={() => setActive(null)} onDone={() => { setActive(null); load(); }} />}
+    </div>
+  );
+}
+
+function SignatureModal({ signature, onClose, onDone }: { signature: ClientSignature; onClose: () => void; onDone: () => void }) {
+  const [fullName, setFullName] = useState("");
+  const [accept, setAccept] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [showRefuse, setShowRefuse] = useState(false);
+  const [reason, setReason] = useState("");
+
+  async function sign() {
+    if (!accept) { setErr("Cochez la case d'acceptation."); return; }
+    if (fullName.trim().length < 4) { setErr("Veuillez taper votre nom complet (4 caractères min)."); return; }
+    setSaving(true); setErr(null);
+    try {
+      await clientCasesApi.sign(signature.id, { full_name: fullName.trim(), accept: true });
+      onDone();
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setSaving(false); }
+  }
+  async function refuse() {
+    setSaving(true); setErr(null);
+    try { await clientCasesApi.refuse(signature.id, reason || undefined); onDone(); }
+    catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto"
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="my-8 w-full max-w-2xl rounded-3xl border border-white/10 bg-[#0f1012] p-6 space-y-4 shadow-2xl">
+        <div>
+          <h3 className="font-display text-xl font-bold text-white">{signature.title}</h3>
+          {signature.case_name && <p className="text-xs text-white/55 mt-1">Dossier : {signature.case_name} {signature.case_number && `· ${signature.case_number}`}</p>}
+        </div>
+
+        <div className="rounded-xl border border-white/10 bg-white/[0.04] p-4 max-h-72 overflow-y-auto">
+          <pre className="whitespace-pre-wrap font-sans text-sm text-white/85">{signature.content_text}</pre>
+        </div>
+
+        {!showRefuse ? (
+          <>
+            <div className="space-y-3 rounded-xl border border-lime/20 bg-lime/[0.04] p-4">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-widest text-white/55 mb-1.5">Votre nom complet (= votre signature)</label>
+                <input value={fullName} onChange={(e) => setFullName(e.target.value)}
+                  className="w-full rounded-xl border border-white/15 bg-white/[0.04] px-4 py-3 text-sm text-white focus:border-lime/50 focus:outline-none"
+                  placeholder="Ex. Jean Dupont" />
+              </div>
+              <label className="flex items-start gap-2.5 text-sm text-white/85 cursor-pointer">
+                <input type="checkbox" checked={accept} onChange={(e) => setAccept(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-white/30" />
+                <span>Je déclare avoir lu et accepté le contenu ci-dessus. Je comprends que ma signature électronique a la même valeur juridique qu'une signature manuscrite (preuve : horodatage + IP + nom typé + hash SHA-256).</span>
+              </label>
+            </div>
+            {err && <div className="rounded-xl border border-coral/35 bg-coral/10 px-3 py-2 text-xs text-coral">{err}</div>}
+            <div className="flex flex-wrap gap-2">
+              <button onClick={onClose} disabled={saving} className="flex-1 rounded-xl border border-white/10 py-2.5 text-sm text-white/55 hover:text-white">Fermer</button>
+              <button onClick={() => setShowRefuse(true)} disabled={saving} className="rounded-xl border border-coral/30 bg-coral/10 px-4 py-2.5 text-sm font-bold text-coral hover:bg-coral/20">Refuser</button>
+              <button onClick={sign} disabled={saving || !accept || fullName.trim().length < 4}
+                className="flex-1 rounded-xl bg-lime py-2.5 text-sm font-bold text-ink hover:brightness-110 disabled:opacity-40">
+                {saving ? "Signature…" : "✍ Signer maintenant"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="space-y-2 rounded-xl border border-coral/30 bg-coral/[0.06] p-4">
+              <label className="block text-[11px] font-bold uppercase tracking-widest text-coral mb-1.5">Motif du refus (optionnel)</label>
+              <textarea rows={3} value={reason} onChange={(e) => setReason(e.target.value)}
+                className="w-full rounded-xl border border-white/15 bg-white/[0.04] px-4 py-3 text-sm text-white focus:border-coral/50 focus:outline-none resize-none"
+                placeholder="Expliquez brièvement pourquoi vous ne pouvez pas signer ce document…" />
+            </div>
+            {err && <div className="rounded-xl border border-coral/35 bg-coral/10 px-3 py-2 text-xs text-coral">{err}</div>}
+            <div className="flex gap-2">
+              <button onClick={() => setShowRefuse(false)} disabled={saving} className="flex-1 rounded-xl border border-white/10 py-2.5 text-sm text-white/55 hover:text-white">← Retour</button>
+              <button onClick={refuse} disabled={saving} className="flex-1 rounded-xl bg-coral py-2.5 text-sm font-bold text-white hover:brightness-110 disabled:opacity-40">
+                {saving ? "…" : "Confirmer le refus"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </motion.div>
   );
 }

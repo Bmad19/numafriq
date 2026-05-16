@@ -12,6 +12,7 @@ import {
   type CaseEventRequest,
   type CaseActivity,
   type ClientAccount,
+  type CaseSignature,
 } from "../api";
 import { useAuth, hasRole } from "../BureauContext";
 
@@ -85,7 +86,7 @@ function fileToB64(file: File): Promise<{ data_base64: string; mime: string; fil
   });
 }
 
-type Tab = "overview" | "milestones" | "events" | "documents" | "invoices" | "activities" | "clients";
+type Tab = "overview" | "milestones" | "events" | "documents" | "invoices" | "activities" | "clients" | "signatures";
 
 const INVOICE_STATUS: Record<CaseInvoice["status"], { l: string; cls: string }> = {
   brouillon:           { l: "Brouillon",       cls: "border-white/15 bg-white/[0.04] text-white/55" },
@@ -231,6 +232,7 @@ export function CaseDetailDrawer({ projectId, onClose, onChange }: {
                 { v: "documents",  l: "Documents",      n: data?.documents.length ?? 0 },
                 { v: "invoices",   l: "Honoraires",     n: null },
                 { v: "activities", l: "Diligences",     n: null },
+                { v: "signatures", l: "Signatures",     n: null },
                 { v: "clients",    l: "Clients",        n: data?.clients.length ?? 0 },
               ] as const).map((t) => (
                 <button key={t.v} onClick={() => setTab(t.v as Tab)}
@@ -324,6 +326,10 @@ export function CaseDetailDrawer({ projectId, onClose, onChange }: {
 
               {data && tab === "activities" && (
                 <ActivitiesPane projectId={data.project.id} isAdmin={isAdmin} />
+              )}
+
+              {data && tab === "signatures" && (
+                <SignaturesPane projectId={data.project.id} clients={data.clients} isAdmin={isAdmin} />
               )}
 
               {data && tab === "clients" && (
@@ -831,18 +837,23 @@ function InvoicesPane({ projectId, isAdmin }: { projectId: number; isAdmin: bool
                         {inv.due_date && <span>📅 Échéance : {fmt(inv.due_date)}</span>}
                       </div>
                     </div>
-                    {isAdmin && (
-                      <div className="shrink-0 flex flex-col gap-1">
-                        {(inv.status === "envoyee" || inv.status === "partiellement_payee") && (
-                          <button onClick={() => setPaymentTarget(inv)}
-                            className="rounded-lg border border-lime/30 bg-lime/12 px-2.5 py-1 text-[10px] font-bold text-lime hover:bg-lime/20">+ Paiement</button>
-                        )}
-                        <button onClick={() => setEditing(inv)}
-                          className="rounded-lg border border-white/10 px-2.5 py-1 text-[10px] font-semibold text-white/60 hover:text-white">✎</button>
-                        <button onClick={async () => { if (confirm("Supprimer cette facture ?")) { await casesApi.invoiceDelete(inv.id); load(); } }}
-                          className="rounded-lg text-white/45 hover:text-coral text-[10px] px-2 py-1 hover:bg-coral/10">🗑</button>
-                      </div>
-                    )}
+                    <div className="shrink-0 flex flex-col gap-1">
+                      <button onClick={() => casesApi.downloadInvoicePdf(inv.id, `facture-${inv.invoice_number ?? inv.id}.pdf`).catch((e) => alert(String(e)))}
+                        title="Télécharger la facture en PDF"
+                        className="rounded-lg border border-coral/30 bg-coral/10 px-2.5 py-1 text-[10px] font-bold text-coral hover:bg-coral/20">↓ PDF</button>
+                      {isAdmin && (
+                        <>
+                          {(inv.status === "envoyee" || inv.status === "partiellement_payee") && (
+                            <button onClick={() => setPaymentTarget(inv)}
+                              className="rounded-lg border border-lime/30 bg-lime/12 px-2.5 py-1 text-[10px] font-bold text-lime hover:bg-lime/20">+ Paiement</button>
+                          )}
+                          <button onClick={() => setEditing(inv)}
+                            className="rounded-lg border border-white/10 px-2.5 py-1 text-[10px] font-semibold text-white/60 hover:text-white">✎</button>
+                          <button onClick={async () => { if (confirm("Supprimer cette facture ?")) { await casesApi.invoiceDelete(inv.id); load(); } }}
+                            className="rounded-lg text-white/45 hover:text-coral text-[10px] px-2 py-1 hover:bg-coral/10">🗑</button>
+                        </>
+                      )}
+                    </div>
                   </div>
                   {invPayments.length > 0 && (
                     <details className="text-[11px] text-white/55">
@@ -1304,6 +1315,174 @@ function DocumentUploadModal({ projectId, open, onClose, onSaved }: { projectId:
           <button onClick={save} disabled={saving || !file} className="flex-1 rounded-xl bg-coral py-2.5 text-sm font-bold text-white hover:brightness-110 transition disabled:opacity-50">
             {saving ? "Téléversement…" : "Téléverser"}
           </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Signatures électroniques (Bureau) ───────────────────────────────────────
+const SIG_STATUS: Record<CaseSignature["status"], { l: string; cls: string }> = {
+  pending:   { l: "En attente", cls: "border-amber-500/40 bg-amber-500/12 text-amber-200" },
+  signed:    { l: "Signé",      cls: "border-lime/35 bg-lime/12 text-lime" },
+  refused:   { l: "Refusé",     cls: "border-coral/40 bg-coral/12 text-coral" },
+  cancelled: { l: "Annulé",     cls: "border-white/15 bg-white/[0.04] text-white/55" },
+  expired:   { l: "Expiré",     cls: "border-white/15 bg-white/[0.04] text-white/55" },
+};
+
+function SignaturesPane({ projectId, clients, isAdmin }: { projectId: number; clients: CaseDetail['clients']; isAdmin: boolean }) {
+  const [items, setItems] = useState<CaseSignature[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [viewing, setViewing] = useState<CaseSignature | null>(null);
+
+  async function load() {
+    setLoading(true);
+    try { setItems(await casesApi.signaturesList(projectId)); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [projectId]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs text-white/60">
+          Envoyez à un client un texte (engagement, mandat, acceptation…) qu'il pourra signer électroniquement
+          en tapant son nom complet. La signature est horodatée avec IP, navigateur et hash SHA-256 (preuve d'intégrité).
+        </p>
+        {isAdmin && (
+          <button onClick={() => setCreating(true)} className="shrink-0 rounded-xl bg-coral px-4 py-2 text-xs font-bold text-white hover:brightness-110">
+            + Nouvelle signature
+          </button>
+        )}
+      </div>
+
+      {loading ? <div className="text-center text-white/45 py-6">Chargement…</div> :
+        items.length === 0 ? (
+          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] py-10 text-center text-sm text-white/45">
+            Aucune signature électronique pour ce dossier.
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {items.map((s) => {
+              const cfg = SIG_STATUS[s.status];
+              return (
+                <li key={s.id} className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${cfg.cls}`}>{cfg.l}</span>
+                      </div>
+                      <p className="font-semibold text-white">{s.title}</p>
+                      <p className="text-xs text-white/55 mt-0.5">Client : {s.client_name} {s.client_email && `· ${s.client_email}`}</p>
+                      {s.status === 'signed' && (
+                        <div className="mt-1.5 text-[11px] text-lime/85 space-y-0.5">
+                          ✓ Signé le {fmt(s.signed_at!)} par <strong>{s.signed_name}</strong>
+                          {s.signed_hash && <div className="text-white/40 font-mono text-[10px] truncate">Hash : {s.signed_hash.slice(0, 32)}…</div>}
+                        </div>
+                      )}
+                      {s.status === 'refused' && (
+                        <div className="mt-1 text-[11px] text-coral">
+                          ✗ Refusé le {fmt(s.refused_at!)} {s.refused_reason && `— ${s.refused_reason}`}
+                        </div>
+                      )}
+                      {s.expires_at && s.status === 'pending' && (
+                        <p className="text-[11px] text-white/45 mt-0.5">Expire le {fmt(s.expires_at)}</p>
+                      )}
+                    </div>
+                    <div className="shrink-0 flex flex-col gap-1">
+                      <button onClick={() => setViewing(s)} className="rounded-lg border border-white/10 px-2.5 py-1 text-[10px] text-white/70 hover:bg-white/5">👁 Voir</button>
+                      {isAdmin && s.status === 'pending' && (
+                        <button onClick={async () => { if (confirm("Annuler cette demande de signature ?")) { await casesApi.signatureCancel(s.id); load(); } }}
+                          className="rounded-lg text-white/45 hover:text-coral text-[10px] px-2 py-1 hover:bg-coral/10">Annuler</button>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+      {creating && <SignatureCreateModal projectId={projectId} clients={clients} onClose={() => setCreating(false)} onSaved={() => { setCreating(false); load(); }} />}
+      {viewing && <SignatureViewModal signature={viewing} onClose={() => setViewing(null)} />}
+    </div>
+  );
+}
+
+function SignatureCreateModal({ projectId, clients, onClose, onSaved }: { projectId: number; clients: CaseDetail['clients']; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({
+    title: "",
+    content_text: "",
+    client_id: clients[0]?.id ?? 0,
+    expires_at: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function save() {
+    if (!form.title.trim() || !form.content_text.trim() || !form.client_id) { setErr("Titre, contenu et client requis."); return; }
+    setSaving(true); setErr(null);
+    try {
+      await casesApi.signatureCreate(projectId, {
+        title: form.title, content_text: form.content_text, client_id: form.client_id,
+        expires_at: form.expires_at || undefined,
+      });
+      onSaved();
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
+    finally { setSaving(false); }
+  }
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto"
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="my-8 w-full max-w-lg rounded-3xl border border-white/10 bg-[#0f1012] p-6 space-y-3 shadow-2xl">
+        <h3 className="font-display text-lg font-bold text-white">Nouvelle demande de signature</h3>
+        <p className="text-xs text-white/55">Le client recevra un email et verra le document dans son espace.</p>
+        <div><label className={lbl}>Titre *</label><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className={inp} placeholder="Ex. Acceptation du mandat" /></div>
+        <div>
+          <label className={lbl}>Client *</label>
+          <select value={form.client_id} onChange={(e) => setForm({ ...form, client_id: +e.target.value })} className={inp}>
+            {clients.map((c) => <option key={c.id} value={c.id}>{c.name}{c.email ? ` (${c.email})` : ""}</option>)}
+          </select>
+          {clients.length === 0 && <p className="text-[10px] text-coral mt-1">Aucun client lié au dossier. Ajoutez-en un d'abord.</p>}
+        </div>
+        <div>
+          <label className={lbl}>Texte à signer *</label>
+          <textarea rows={8} value={form.content_text} onChange={(e) => setForm({ ...form, content_text: e.target.value })} className={inp + " resize-y font-mono text-xs"}
+            placeholder="Je soussigné(e) ………, déclare accepter le mandat confié à Afrilex Conseil pour la défense de mes intérêts dans le dossier ……, aux conditions financières suivantes : ……" />
+        </div>
+        <div><label className={lbl}>Expire le (optionnel)</label><input type="date" value={form.expires_at} onChange={(e) => setForm({ ...form, expires_at: e.target.value })} className={inp} /></div>
+        {err && <div className="rounded-xl border border-coral/35 bg-coral/10 px-3 py-2 text-xs text-coral">{err}</div>}
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} disabled={saving} className="flex-1 rounded-xl border border-white/10 py-2.5 text-sm text-white/55 hover:text-white">Annuler</button>
+          <button onClick={save} disabled={saving || !form.client_id} className="flex-1 rounded-xl bg-coral py-2.5 text-sm font-bold text-white hover:brightness-110 disabled:opacity-50">
+            {saving ? "Envoi…" : "Envoyer la demande"}
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+function SignatureViewModal({ signature, onClose }: { signature: CaseSignature; onClose: () => void }) {
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[60] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto"
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="my-8 w-full max-w-2xl rounded-3xl border border-white/10 bg-[#0f1012] p-6 space-y-3 shadow-2xl">
+        <h3 className="font-display text-lg font-bold text-white">{signature.title}</h3>
+        <p className="text-xs text-white/55">Pour : {signature.client_name} · Statut : <strong className={SIG_STATUS[signature.status].cls.split(' ').find(c => c.startsWith('text-'))}>{SIG_STATUS[signature.status].l}</strong></p>
+        <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 max-h-80 overflow-y-auto">
+          <pre className="whitespace-pre-wrap font-sans text-sm text-white/85">{signature.content_text}</pre>
+        </div>
+        {signature.status === 'signed' && (
+          <div className="rounded-xl border border-lime/30 bg-lime/[0.06] p-3 text-xs space-y-1">
+            <div>✓ Signé le <strong>{fmt(signature.signed_at!)}</strong> par <strong>{signature.signed_name}</strong></div>
+            {signature.signed_hash && <div className="text-white/60 font-mono text-[10px] break-all">Hash SHA-256 : {signature.signed_hash}</div>}
+          </div>
+        )}
+        <div className="flex justify-end pt-2">
+          <button onClick={onClose} className="rounded-xl border border-white/10 px-4 py-2 text-sm text-white/70 hover:text-white">Fermer</button>
         </div>
       </div>
     </motion.div>
