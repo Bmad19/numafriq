@@ -15,7 +15,7 @@ const ROLE_COLORS = { super_admin: "text-coral border-coral/30 bg-coral/10", adm
 type FormState = Partial<BureauUser> & { password?: string; permsAll: boolean; permsSet: Set<PermissionKey> };
 
 const ROLE_DEFAULT_PERMS: Record<BureauUser["role"], PermissionKey[]> = {
-  agent: ["leads", "assistant", "projects", "missions", "clients", "chat"],
+  agent: ["leads", "assistant", "projects", "missions", "clients", "chat", "hr"],
   admin: ["leads", "assistant", "projects", "missions", "clients", "chat", "hr", "accounting", "feedback", "job_offers", "blog"],
   super_admin: [...PERMISSION_KEYS],
 };

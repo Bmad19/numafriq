@@ -8,7 +8,8 @@ import { ProjectsPage } from "./pages/ProjectsPage";
 import { ChatPage } from "./pages/ChatPage";
 import { ComptabilitePage } from "./pages/ComptabilitePage";
 import { EquipePage } from "./pages/EquipePage";
-import { RHPage, MissionsPage, RetoursPage, SettingsPage } from "./pages/OtherPages";
+import { MissionsPage, RetoursPage, SettingsPage } from "./pages/OtherPages";
+import { HRPage } from "./pages/HRPage";
 import { ClientMessagesPage } from "./pages/ClientMessagesPage";
 import { LeadsPage } from "./pages/LeadsPage";
 import { AgentAssistantPage } from "./pages/AgentAssistantPage";
@@ -42,7 +43,7 @@ function BureauInner() {
         <Route path="projets"       element={<ProjectsPage />} />
         <Route path="missions"      element={<MissionsPage />} />
         <Route path="chat"          element={<ChatPage />} />
-        <Route path="rh"            element={<RHPage />} />
+        <Route path="rh"            element={<HRPage />} />
         <Route path="comptabilite"  element={<ComptabilitePage />} />
         <Route path="retours"       element={<RetoursPage />} />
         <Route path="clients"       element={<ClientMessagesPage />} />

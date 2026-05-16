@@ -88,11 +88,30 @@ export const missionsApi = {
 
 // ── HR ───────────────────────────────────────────────────────────────────────
 export const hrApi = {
-  list:   () => request<HrRecord[]>('hr.php', 'GET', undefined, { action: 'list' }),
-  create: (data: Partial<HrRecord>) => request('hr.php', 'POST', data, { action: 'create' }),
-  update: (id: number, data: Partial<HrRecord>) => request('hr.php', 'PUT', data, { action: 'update', id: String(id) }),
-  delete: (id: number) => request('hr.php', 'DELETE', undefined, { action: 'delete', id: String(id) }),
-  stats:  () => request<HrStats>('hr.php', 'GET', undefined, { action: 'stats' }),
+  /** Admin+ : tous les records. Agent : ses propres (l'API filtre par rôle). */
+  list:    () => request<HrRecord[]>('hr.php', 'GET', undefined, { action: 'list' }),
+  /** Force l'API à ne renvoyer QUE les records de l'utilisateur courant. */
+  mine:    () => request<HrRecord[]>('hr.php', 'GET', undefined, { action: 'mine' }),
+  /** Agent : soumettre sa propre demande (workflow obligatoire). */
+  request: (data: {
+    type: 'conge' | 'absence' | 'retard' | 'note';
+    title: string;
+    description?: string;
+    start_date?: string;
+    end_date?: string;
+  }) => request<{ success: boolean; record: HrRecord }>('hr.php', 'POST', data, { action: 'request' }),
+  /** Admin+ : créer un record pour soi ou pour autrui (peut directement définir le statut). */
+  create:  (data: Partial<HrRecord>) =>
+    request<{ success: boolean; record: HrRecord }>('hr.php', 'POST', data, { action: 'create' }),
+  /** Admin valide/refuse (level='admin'), super_admin approuve/refuse finalement (level='super_admin'). */
+  decide:  (id: number, payload: {
+    level: 'admin' | 'super_admin';
+    decision: 'valide' | 'refuse' | 'approuve';
+    comment?: string;
+  }) => request<{ success: boolean; record: HrRecord }>('hr.php', 'POST', payload, { action: 'decide', id: String(id) }),
+  update:  (id: number, data: Partial<HrRecord>) => request('hr.php', 'PUT', data, { action: 'update', id: String(id) }),
+  delete:  (id: number) => request('hr.php', 'DELETE', undefined, { action: 'delete', id: String(id) }),
+  stats:   () => request<HrStats>('hr.php', 'GET', undefined, { action: 'stats' }),
 };
 
 // ── Accounting ───────────────────────────────────────────────────────────────
@@ -138,7 +157,7 @@ export const PERMISSION_LABELS: Record<PermissionKey, { label: string; group: 'a
   missions:   { label: "Mes missions",           group: 'agent', description: "Voir / mettre à jour le statut de ses missions." },
   clients:    { label: "Messages clients",       group: 'agent', description: "Lire et répondre aux messages de l'espace client." },
   chat:       { label: "Chat interne",           group: 'agent', description: "Discuter avec les autres membres du bureau." },
-  hr:         { label: "Ressources humaines",    group: 'admin', description: "Congés, primes, notes RH." },
+  hr:         { label: "Ressources humaines",    group: 'agent', description: "Demander congés/absences et suivre ses propres demandes. Admin+ : valider les demandes, gérer primes et notes." },
   accounting: { label: "Comptabilité",           group: 'admin', description: "Recettes, dépenses, rapports financiers." },
   feedback:   { label: "Retours clients",        group: 'admin', description: "Notes et avis des clients." },
   job_offers: { label: "Offres d'emploi",        group: 'admin', description: "Publier et modérer les offres affichées sur /recrutement." },
@@ -183,13 +202,53 @@ export type Mission = {
   status: 'a_faire'|'en_cours'|'termine'; due_date?: string; created_at: string;
 };
 
+export type HrStatus = 'en_attente' | 'valide_admin' | 'refuse_admin' | 'approuve' | 'refuse';
+
 export type HrRecord = {
-  id: number; user_id: number; employee_name?: string;
-  type: 'conge'|'absence'|'retard'|'prime'|'note';
-  title: string; description?: string; date: string;
-  amount?: number; status: 'en_attente'|'approuve'|'refuse'; created_at: string;
+  id: number;
+  user_id: number;
+  employee_name?: string | null;
+  employee_email?: string | null;
+  type: 'conge' | 'absence' | 'retard' | 'prime' | 'note';
+  title: string;
+  description?: string | null;
+  /** Date de référence (legacy — pour les anciens records sans start_date) */
+  date: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  amount?: number | null;
+  status: HrStatus;
+  requires_workflow?: boolean;
+
+  admin_decision?: 'valide' | 'refuse' | null;
+  admin_decision_at?: string | null;
+  admin_decision_by?: number | null;
+  admin_decision_by_name?: string | null;
+  admin_comment?: string | null;
+
+  super_admin_decision?: 'approuve' | 'refuse' | null;
+  super_admin_decision_at?: string | null;
+  super_admin_decision_by?: number | null;
+  super_admin_decision_by_name?: string | null;
+  super_admin_comment?: string | null;
+
+  created_by?: number | null;
+  created_by_name?: string | null;
+  submitted_at?: string | null;
+  created_at: string;
+  updated_at?: string;
 };
-export type HrStats = { total_conges: number; en_attente: number; total_primes: number };
+
+export type HrStats = {
+  total: number;
+  en_attente: number;
+  valide_admin: number;
+  refuse_admin: number;
+  approuve: number;
+  refuse: number;
+  total_conges: number;
+  total_primes: number;
+};
 
 export type AccountingEntry = {
   id: number; type: 'recette'|'depense'; category: string;

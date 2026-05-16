@@ -22,7 +22,7 @@ const NAV: NavEntry[] = [
   { to: "/bureau/missions",      label: "Mes missions",    icon: <TaskIcon />,    min: "agent",       perm: "missions" },
   { to: "/bureau/clients",       label: "Messages clients",icon: <InboxIcon />,   min: "agent",       perm: "clients",    badge: "clients" },
   { to: "/bureau/chat",          label: "Chat interne",    icon: <ChatIcon />,    min: "agent",       perm: "chat" },
-  { to: "/bureau/rh",            label: "Ressources Hum.", icon: <PeopleIcon />,  min: "admin",       perm: "hr" },
+  { to: "/bureau/rh",            label: "Ressources Hum.", icon: <PeopleIcon />,  min: "agent",       perm: "hr" },
   { to: "/bureau/comptabilite",  label: "Comptabilité",    icon: <ChartIcon />,   min: "admin",       perm: "accounting" },
   { to: "/bureau/retours",       label: "Retours clients", icon: <StarIcon />,    min: "admin",       perm: "feedback" },
   { to: "/bureau/offres-emploi", label: "Offres d'emploi", icon: <BriefcaseIcon />, min: "admin",     perm: "job_offers" },

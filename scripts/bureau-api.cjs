@@ -808,50 +808,263 @@ app.all('/api/bureau/missions.php', async (req, res) => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// RH
+// RH — Workflow congés / absences à 2 niveaux
+//   • Agent : crée ses propres demandes (conge/absence/retard/note), voit ses propres records
+//   • Admin : valide / refuse les demandes (étape intermédiaire), peut créer des records pour autrui
+//   • Super_admin : décision finale (peut overrider l'admin), supprimer
+// Workflow statuts : en_attente → valide_admin → approuve  (ou refuse à n'importe quelle étape)
 // ══════════════════════════════════════════════════════════════════════════════
+const HR_TYPES_ALLOWED = ['conge', 'absence', 'retard', 'prime', 'note'];
+const HR_TYPES_AGENT_REQUEST = ['conge', 'absence', 'retard', 'note']; // pas de "prime" pour l'agent
+
+const HR_SELECT_FIELDS =
+  '*, employee:users!user_id(full_name,email), creator:users!created_by(full_name), ' +
+  'admin_user:users!admin_decision_by(full_name), super_admin_user:users!super_admin_decision_by(full_name)';
+
+function shapeHrRecord(h) {
+  if (!h) return h;
+  return {
+    ...h,
+    employee_name:           h.employee?.full_name ?? null,
+    employee_email:          h.employee?.email ?? null,
+    created_by_name:         h.creator?.full_name ?? null,
+    admin_decision_by_name:  h.admin_user?.full_name ?? null,
+    super_admin_decision_by_name: h.super_admin_user?.full_name ?? null,
+    employee: undefined,
+    creator: undefined,
+    admin_user: undefined,
+    super_admin_user: undefined,
+  };
+}
+
 app.all('/api/bureau/hr.php', async (req, res) => {
   if (!(await authGuard(req, res))) return;
   if (!permGuard(req, res, 'hr')) return;
+  const user = req.user;
+  const isAgent = user.role === 'agent';
+  const isAdmin = user.role === 'admin' || user.role === 'super_admin';
+  const isSuperAdmin = user.role === 'super_admin';
   const { action, id } = req.query;
 
-  if (action === 'list') {
-    const u = await authGuard(req, res); if (!u) return;
-    const { data } = await supabase.from('hr_records')
-      .select('*, employee:users!user_id(full_name)').order('date', { ascending: false });
-    return res.json((data ?? []).map(h => ({ ...h, employee: undefined, employee_name: h.employee?.full_name ?? null })));
-  }
+  try {
+    // ── Liste / Mine ─────────────────────────────────────────────────────────
+    if (action === 'list' || action === 'mine') {
+      let q = supabase.from('hr_records').select(HR_SELECT_FIELDS).order('created_at', { ascending: false });
+      // Agent : forcé à ne voir que ses propres records
+      if (isAgent || action === 'mine') q = q.eq('user_id', user.id);
+      const { data, error } = await q;
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json((data ?? []).map(shapeHrRecord));
+    }
 
-  if (action === 'stats') {
-    const u = await authGuard(req, res); if (!u) return;
-    const [{ count: total_conges }, { count: en_attente }, { data: primes }] = await Promise.all([
-      supabase.from('hr_records').select('*', { count: 'exact', head: true }).eq('type', 'conge'),
-      supabase.from('hr_records').select('*', { count: 'exact', head: true }).eq('status', 'en_attente'),
-      supabase.from('hr_records').select('amount').eq('type', 'prime').eq('status', 'approuve'),
-    ]);
-    return res.json({ total_conges, en_attente, total_primes: (primes ?? []).reduce((s, h) => s + (h.amount ?? 0), 0) });
-  }
+    if (action === 'stats') {
+      // Stats globales (admin+) ou personnelles (agent)
+      const baseFilter = (qb) => isAgent ? qb.eq('user_id', user.id) : qb;
+      const [
+        { count: total },
+        { count: en_attente },
+        { count: valide_admin },
+        { count: refuse_admin },
+        { count: approuve },
+        { count: refuse },
+        { count: conges },
+        { data: primes },
+      ] = await Promise.all([
+        baseFilter(supabase.from('hr_records').select('*', { count: 'exact', head: true })),
+        baseFilter(supabase.from('hr_records').select('*', { count: 'exact', head: true })).eq('status', 'en_attente'),
+        baseFilter(supabase.from('hr_records').select('*', { count: 'exact', head: true })).eq('status', 'valide_admin'),
+        baseFilter(supabase.from('hr_records').select('*', { count: 'exact', head: true })).eq('status', 'refuse_admin'),
+        baseFilter(supabase.from('hr_records').select('*', { count: 'exact', head: true })).eq('status', 'approuve'),
+        baseFilter(supabase.from('hr_records').select('*', { count: 'exact', head: true })).eq('status', 'refuse'),
+        baseFilter(supabase.from('hr_records').select('*', { count: 'exact', head: true })).eq('type', 'conge'),
+        baseFilter(supabase.from('hr_records').select('amount')).eq('type', 'prime').eq('status', 'approuve'),
+      ]);
+      return res.json({
+        total: total ?? 0,
+        en_attente: en_attente ?? 0,
+        valide_admin: valide_admin ?? 0,
+        refuse_admin: refuse_admin ?? 0,
+        approuve: approuve ?? 0,
+        refuse: refuse ?? 0,
+        total_conges: conges ?? 0,
+        total_primes: (primes ?? []).reduce((s, h) => s + (h.amount ?? 0), 0),
+      });
+    }
 
-  if (action === 'create' && req.method === 'POST') {
-    const u = await authGuard(req, res, 'admin'); if (!u) return;
-    const b = req.body;
-    await supabase.from('hr_records').insert({ user_id: +b.user_id, type: b.type, title: b.title, description: b.description || null, date: b.date, amount: +b.amount || 0, status: b.status || 'en_attente', created_by: u.id });
-    return res.json({ success: true });
-  }
+    // ── Agent (et + ) crée sa propre demande (workflow obligatoire) ─────────
+    if (action === 'request' && req.method === 'POST') {
+      const b = req.body || {};
+      const type = String(b.type ?? '').trim();
+      if (!HR_TYPES_AGENT_REQUEST.includes(type)) {
+        return res.status(400).json({ error: `Type non autorisé pour une demande : ${HR_TYPES_AGENT_REQUEST.join(', ')}` });
+      }
+      const title = String(b.title ?? '').trim().slice(0, 240);
+      if (!title) return res.status(400).json({ error: 'Titre requis (ex: « Congé annuel — semaine 18 »).' });
+      const startDate = b.start_date ? String(b.start_date).slice(0, 10) : null;
+      const endDate = b.end_date ? String(b.end_date).slice(0, 10) : (startDate || null);
+      if ((type === 'conge' || type === 'absence') && (!startDate || !endDate)) {
+        return res.status(400).json({ error: 'Dates de début et de fin requises pour une demande de congé ou d\'absence.' });
+      }
+      if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
+        return res.status(400).json({ error: 'La date de début doit être antérieure ou égale à la date de fin.' });
+      }
+      const description = b.description ? String(b.description).slice(0, 4000) : null;
+      const payload = {
+        user_id: user.id,                      // toujours soi-même
+        type,
+        title,
+        description,
+        date: startDate || new Date().toISOString().slice(0, 10),
+        start_date: startDate,
+        end_date: endDate,
+        amount: 0,
+        status: 'en_attente',
+        requires_workflow: true,
+        submitted_at: new Date().toISOString(),
+        created_by: user.id,
+      };
+      const { data, error } = await supabase.from('hr_records').insert(payload).select(HR_SELECT_FIELDS).single();
+      if (error) return res.status(500).json({ error: error.message });
+      sendWhatsApp(`📋 *Nouvelle demande RH — ${title}*\n👤 ${user.full_name}\n📂 Type : ${type}${startDate ? `\n📅 Du ${startDate} au ${endDate}` : ''}\n\n🔗 /bureau/rh\n⏰ ${new Date().toLocaleString('fr-FR')}`);
+      return res.json({ success: true, record: shapeHrRecord(data) });
+    }
 
-  if (action === 'update' && req.method === 'PUT') {
-    const u = await authGuard(req, res, 'admin'); if (!u) return;
-    await supabase.from('hr_records').update({ status: req.body.status, description: req.body.description || null }).eq('id', +id);
-    return res.json({ success: true });
-  }
+    // ── Admin+ crée un record (peut inclure prime, peut être directement approuvé) ─
+    if (action === 'create' && req.method === 'POST') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const b = req.body || {};
+      const type = String(b.type ?? '').trim();
+      if (!HR_TYPES_ALLOWED.includes(type)) return res.status(400).json({ error: 'Type invalide.' });
+      const targetUserId = b.user_id ? +b.user_id : user.id;
+      const title = String(b.title ?? '').trim().slice(0, 240);
+      if (!title) return res.status(400).json({ error: 'Titre requis.' });
+      const startDate = b.start_date ? String(b.start_date).slice(0, 10) : (b.date ? String(b.date).slice(0, 10) : null);
+      const endDate = b.end_date ? String(b.end_date).slice(0, 10) : startDate;
+      // Statut initial : admin peut directement approuver/refuser pour les types "prime", "note"
+      // ou laisser en_attente pour conge/absence/retard (workflow standard)
+      let initialStatus = String(b.status || 'en_attente');
+      if (!['en_attente', 'valide_admin', 'refuse_admin', 'approuve', 'refuse'].includes(initialStatus)) initialStatus = 'en_attente';
+      const payload = {
+        user_id: targetUserId,
+        type,
+        title,
+        description: b.description ? String(b.description).slice(0, 4000) : null,
+        date: startDate || new Date().toISOString().slice(0, 10),
+        start_date: startDate,
+        end_date: endDate,
+        amount: Number.isFinite(+b.amount) ? +b.amount : 0,
+        status: initialStatus,
+        requires_workflow: (type === 'conge' || type === 'absence' || type === 'retard'),
+        submitted_at: new Date().toISOString(),
+        created_by: user.id,
+      };
+      const { data, error } = await supabase.from('hr_records').insert(payload).select(HR_SELECT_FIELDS).single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, record: shapeHrRecord(data) });
+    }
 
-  if (action === 'delete' && req.method === 'DELETE') {
-    const u = await authGuard(req, res, 'super_admin'); if (!u) return;
-    await supabase.from('hr_records').delete().eq('id', +id);
-    return res.json({ success: true });
-  }
+    // ── Décision admin (valider / refuser — étape intermédiaire) ────────────
+    if (action === 'decide' && req.method === 'POST') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const b = req.body || {};
+      const recordId = +id;
+      const decision = String(b.decision ?? '').toLowerCase();
+      const level = String(b.level ?? '').toLowerCase(); // 'admin' ou 'super_admin'
+      const comment = b.comment ? String(b.comment).slice(0, 2000) : null;
 
-  res.status(404).json({ error: 'Action non trouvée' });
+      if (!['valide', 'refuse', 'approuve'].includes(decision)) {
+        return res.status(400).json({ error: 'Décision invalide : valide | refuse | approuve.' });
+      }
+      if (!['admin', 'super_admin'].includes(level)) {
+        return res.status(400).json({ error: 'Niveau invalide : admin | super_admin.' });
+      }
+      if (level === 'super_admin' && !isSuperAdmin) {
+        return res.status(403).json({ error: 'Seul le super administrateur peut prendre la décision finale.' });
+      }
+
+      const now = new Date().toISOString();
+      const update = {};
+      let newStatus = null;
+
+      if (level === 'admin') {
+        if (decision === 'valide') {
+          update.admin_decision = 'valide';
+          newStatus = 'valide_admin';
+        } else if (decision === 'refuse') {
+          update.admin_decision = 'refuse';
+          newStatus = 'refuse_admin';
+        } else {
+          return res.status(400).json({ error: 'Décision admin doit être valide ou refuse.' });
+        }
+        update.admin_decision_at = now;
+        update.admin_decision_by = user.id;
+        if (comment !== null) update.admin_comment = comment;
+      } else {
+        // super_admin : décision finale (peut overrider l'admin)
+        if (decision === 'approuve') {
+          update.super_admin_decision = 'approuve';
+          newStatus = 'approuve';
+        } else if (decision === 'refuse') {
+          update.super_admin_decision = 'refuse';
+          newStatus = 'refuse';
+        } else {
+          return res.status(400).json({ error: 'Décision super_admin doit être approuve ou refuse.' });
+        }
+        update.super_admin_decision_at = now;
+        update.super_admin_decision_by = user.id;
+        if (comment !== null) update.super_admin_comment = comment;
+      }
+      update.status = newStatus;
+
+      const { data, error } = await supabase
+        .from('hr_records')
+        .update(update)
+        .eq('id', recordId)
+        .select(HR_SELECT_FIELDS)
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+
+      const shaped = shapeHrRecord(data);
+      // Notification WhatsApp à l'étape suivante du workflow
+      const employeeName = shaped.employee_name ?? '?';
+      if (level === 'admin' && decision === 'valide') {
+        sendWhatsApp(`✅ *Demande RH validée par admin*\n👤 ${employeeName}\n📋 ${shaped.title}\n\nEn attente de décision finale super-admin.\n🔗 /bureau/rh\n⏰ ${new Date().toLocaleString('fr-FR')}`);
+      } else if (level === 'super_admin') {
+        const verb = decision === 'approuve' ? '✅ APPROUVÉE' : '❌ REFUSÉE';
+        sendWhatsApp(`${verb} *(décision finale)*\n👤 ${employeeName}\n📋 ${shaped.title}\n👮 Par : ${user.full_name}${comment ? `\n💬 ${comment}` : ''}\n⏰ ${new Date().toLocaleString('fr-FR')}`);
+      }
+      return res.json({ success: true, record: shaped });
+    }
+
+    // ── Update générique (admin+ : description, statut direct, montant) ──────
+    if (action === 'update' && req.method === 'PUT') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const b = req.body || {};
+      const update = {};
+      if (b.status && ['en_attente','valide_admin','refuse_admin','approuve','refuse'].includes(b.status)) update.status = b.status;
+      if (b.description !== undefined) update.description = b.description ? String(b.description).slice(0, 4000) : null;
+      if (b.title !== undefined) update.title = String(b.title).slice(0, 240);
+      if (b.amount !== undefined && Number.isFinite(+b.amount)) update.amount = +b.amount;
+      if (b.start_date !== undefined) update.start_date = b.start_date || null;
+      if (b.end_date !== undefined) update.end_date = b.end_date || null;
+      const { error } = await supabase.from('hr_records').update(update).eq('id', +id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    // ── Suppression (super_admin uniquement) ─────────────────────────────────
+    if (action === 'delete' && req.method === 'DELETE') {
+      if (!isSuperAdmin) return res.status(403).json({ error: 'Réservé au super administrateur.' });
+      const { error } = await supabase.from('hr_records').delete().eq('id', +id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    return res.status(404).json({ error: 'Action non trouvée' });
+  } catch (e) {
+    console.error('hr.php', e);
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
