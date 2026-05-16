@@ -873,6 +873,7 @@ export type MailboxMessageSummary = {
   size: number;
   seen: boolean;
   flagged: boolean;
+  has_attachments?: boolean;
 };
 
 export type MailboxInbox = {

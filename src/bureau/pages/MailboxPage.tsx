@@ -95,6 +95,12 @@ export function MailboxPage() {
   const [sending, setSending] = useState(false);
   const [sendResult, setSendResult] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
+  // Mode plein écran (cache la liste) + filtres avancés
+  const [fullScreen, setFullScreen] = useState(false);
+  const [onlyUnread, setOnlyUnread] = useState(false);
+  const [onlyAttachments, setOnlyAttachments] = useState(false);
+  const [period, setPeriod] = useState<"all" | "today" | "7d" | "30d">("all");
+
   function loadAccounts() {
     setLoadingAccounts(true);
     mailboxApi.accounts()
@@ -129,19 +135,28 @@ export function MailboxPage() {
   }
 
   useEffect(() => { loadAccounts(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
-  useEffect(() => { if (activeId != null) loadInbox(activeId); }, [activeId]);
+  useEffect(() => { if (activeId != null) { loadInbox(activeId); setFullScreen(false); } }, [activeId]);
   useEffect(() => {
     if (activeId != null && selectedUid != null) loadMessage(activeId, selectedUid);
+    if (selectedUid == null) setFullScreen(false);
   }, [activeId, selectedUid]);
 
   const filteredMessages = useMemo<MailboxMessageSummary[]>(() => {
     if (!inbox) return [];
     const q = search.trim().toLowerCase();
-    if (!q) return inbox.messages;
-    return inbox.messages.filter((m) =>
-      [m.subject, m.from_name, m.from_address, m.to].some((v) => String(v ?? "").toLowerCase().includes(q)),
-    );
-  }, [inbox, search]);
+    const now = Date.now();
+    const periodMs = period === "today" ? 86400e3 : period === "7d" ? 7 * 86400e3 : period === "30d" ? 30 * 86400e3 : null;
+    return inbox.messages.filter((m) => {
+      if (onlyUnread && m.seen) return false;
+      if (onlyAttachments && !m.has_attachments) return false;
+      if (periodMs && m.date) {
+        const t = new Date(m.date).getTime();
+        if (!Number.isFinite(t) || now - t > periodMs) return false;
+      }
+      if (q && ![m.subject, m.from_name, m.from_address, m.to].some((v) => String(v ?? "").toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [inbox, search, onlyUnread, onlyAttachments, period]);
 
   function openCreate() {
     setForm(EMPTY_FORM);
@@ -427,9 +442,48 @@ export function MailboxPage() {
             ))}
           </div>
 
+          {/* Filtres rapides */}
+          {!fullScreen && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setOnlyUnread((v) => !v)}
+                className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition ${
+                  onlyUnread ? "border-coral/40 bg-coral/15 text-coral" : "border-white/12 bg-white/[0.03] text-white/65 hover:text-white"
+                }`}
+                title="Non lus uniquement"
+              >● Non lus{inbox?.unseen ? ` (${inbox.unseen})` : ""}</button>
+              <button
+                onClick={() => setOnlyAttachments((v) => !v)}
+                className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition ${
+                  onlyAttachments ? "border-violet/40 bg-violet/15 text-violet" : "border-white/12 bg-white/[0.03] text-white/65 hover:text-white"
+                }`}
+                title="Messages avec pièces jointes"
+              >📎 Pièces jointes</button>
+              <div className="flex rounded-full border border-white/12 bg-white/[0.03] overflow-hidden">
+                {([
+                  { v: "all", l: "Tout" },
+                  { v: "today", l: "Aujourd'hui" },
+                  { v: "7d", l: "7 jours" },
+                  { v: "30d", l: "30 jours" },
+                ] as const).map((p) => (
+                  <button key={p.v} onClick={() => setPeriod(p.v)}
+                    className={`px-3 py-1.5 text-[11px] font-bold transition ${period === p.v ? "bg-white/12 text-white" : "text-white/55 hover:text-white"}`}>
+                    {p.l}
+                  </button>
+                ))}
+              </div>
+              {(onlyUnread || onlyAttachments || period !== "all" || search) && (
+                <button
+                  onClick={() => { setOnlyUnread(false); setOnlyAttachments(false); setPeriod("all"); setSearch(""); }}
+                  className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] text-white/55 hover:text-white"
+                >✕ Effacer filtres</button>
+              )}
+            </div>
+          )}
+
           {/* Boîte */}
-          <div className="grid gap-4 lg:grid-cols-[minmax(240px,300px)_1fr]">
-            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden flex flex-col max-h-[85vh]">
+          <div className={`grid gap-4 ${fullScreen ? "" : "lg:grid-cols-[minmax(240px,300px)_1fr]"}`}>
+            <div className={`rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden flex flex-col max-h-[85vh] ${fullScreen ? "hidden" : ""}`}>
               <div className="border-b border-white/[0.06] p-3 flex items-center gap-2">
                 <input
                   value={search}
@@ -472,8 +526,9 @@ export function MailboxPage() {
                                 </p>
                                 <span className="text-[10px] text-white/40 whitespace-nowrap">{fmtDate(m.date)}</span>
                               </div>
-                              <p className={`mt-0.5 truncate text-[11px] ${m.seen ? "text-white/55" : "text-white/85 font-medium"}`}>
-                                {m.subject}
+                              <p className={`mt-0.5 truncate text-[11px] ${m.seen ? "text-white/55" : "text-white/85 font-medium"} flex items-center gap-1`}>
+                                {m.has_attachments && <span className="text-violet/85 shrink-0" title="Pièce jointe">📎</span>}
+                                <span className="truncate">{m.subject}</span>
                               </p>
                             </div>
                           </div>
@@ -492,7 +547,7 @@ export function MailboxPage() {
               )}
             </div>
 
-            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden flex flex-col max-h-[85vh] min-h-[600px]">
+            <div className={`rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden flex flex-col min-h-[600px] ${fullScreen ? "max-h-[92vh]" : "max-h-[85vh]"}`}>
               {selectedUid == null ? (
                 <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
                   <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white/[0.04] text-2xl">✉️</div>
@@ -524,6 +579,11 @@ export function MailboxPage() {
                           className="rounded-lg border border-white/15 bg-white/[0.03] px-3 py-1.5 text-xs font-bold text-white/75 hover:bg-white/[0.07] transition"
                           title="Transférer"
                         >→ Tr</button>
+                        <button
+                          onClick={() => setFullScreen((v) => !v)}
+                          className="rounded-lg border border-white/15 bg-white/[0.03] px-3 py-1.5 text-xs font-bold text-white/75 hover:bg-white/[0.07] transition"
+                          title={fullScreen ? "Réafficher la liste" : "Mode plein écran (lecture confortable)"}
+                        >{fullScreen ? "⤡ Réduire" : "⤢ Plein écran"}</button>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-[80px_1fr] gap-y-1.5 gap-x-3 text-xs">

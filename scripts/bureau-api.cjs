@@ -3102,6 +3102,22 @@ async function loadMailboxAccount(id, includeSecret = false) {
   return data;
 }
 
+/** Détecte récursivement la présence d'une pièce jointe dans la bodyStructure IMAP. */
+function hasAttachmentInStructure(part) {
+  if (!part) return false;
+  const disp = (part.disposition || '').toLowerCase();
+  if (disp === 'attachment') return true;
+  // Souvent : type="application/pdf" + disposition manquante, considéré comme PJ si pas inline
+  if (!disp && part.type && /^(application|image|audio|video)\//i.test(part.type) && part.type !== 'application/pgp-signature') {
+    // mais pas les images "related" (inline HTML)
+    if (!part.id && !part.related) return true;
+  }
+  if (Array.isArray(part.childNodes)) {
+    for (const c of part.childNodes) if (hasAttachmentInStructure(c)) return true;
+  }
+  return false;
+}
+
 /** Ouvre une connexion IMAP, exécute fn(client), ferme proprement (logout best-effort). */
 async function withImapClient(account, fn, { timeoutMs = 25000 } = {}) {
   if (!ImapFlow) throw new Error('Module imapflow absent — npm install imapflow');
@@ -3229,7 +3245,7 @@ app.all('/api/bureau/mailbox.php', async (req, res) => {
             const start = Math.max(1, total - limit + 1);
             const range = `${start}:${total}`;
             const list = [];
-            for await (const m of client.fetch(range, { uid: true, envelope: true, internalDate: true, flags: true, size: true })) {
+            for await (const m of client.fetch(range, { uid: true, envelope: true, internalDate: true, flags: true, size: true, bodyStructure: true })) {
               const env = m.envelope || {};
               const fromAddr = (env.from && env.from[0]) || {};
               const toAddrs = Array.isArray(env.to) ? env.to.map((a) => `${a.name ?? ''} <${a.address ?? ''}>`.trim()).join(', ') : '';
@@ -3244,6 +3260,7 @@ app.all('/api/bureau/mailbox.php', async (req, res) => {
                 size: m.size ?? 0,
                 seen: Array.isArray(m.flags) ? m.flags.includes('\\Seen') : (m.flags && m.flags.has ? m.flags.has('\\Seen') : false),
                 flagged: Array.isArray(m.flags) ? m.flags.includes('\\Flagged') : false,
+                has_attachments: hasAttachmentInStructure(m.bodyStructure),
               });
             }
             list.sort((a, b) => (a.date < b.date ? 1 : -1));
