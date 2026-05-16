@@ -759,7 +759,291 @@ app.all('/api/bureau/projects.php', async (req, res) => {
     return res.json({ success: true });
   }
 
+  if (action === 'update_meta' && req.method === 'PUT') {
+    const u = await authGuard(req, res, 'admin'); if (!u) return;
+    const b = req.body || {};
+    const update = {};
+    if (b.case_number !== undefined)      update.case_number = b.case_number ? String(b.case_number).trim().slice(0, 80) : null;
+    if (b.practice_area !== undefined)    update.practice_area = b.practice_area ? String(b.practice_area).trim().slice(0, 80) : null;
+    if (b.current_phase !== undefined)    update.current_phase = b.current_phase ? String(b.current_phase).trim().slice(0, 240) : null;
+    if (b.next_action !== undefined)      update.next_action = b.next_action ? String(b.next_action).trim().slice(0, 500) : null;
+    if (b.next_action_date !== undefined) update.next_action_date = b.next_action_date || null;
+    const { error } = await supabase.from('projects').update(update).eq('id', +id);
+    if (error) return res.status(500).json({ error: error.message });
+    return res.json({ success: true });
+  }
+
   res.status(404).json({ error: 'Action non trouvée' });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CASES — Dossiers juridiques (sous-collections : milestones, events, documents)
+// Réutilise la perm 'projects' (un dossier = un projet enrichi).
+// ══════════════════════════════════════════════════════════════════════════════
+const CASE_DOC_MAX = 10 * 1024 * 1024; // 10 Mo par document
+const CASE_DOC_MIMES = new Set([
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'image/jpeg', 'image/png', 'image/webp',
+  'text/plain',
+]);
+
+function caseDocBytea(buf) { return '\\x' + buf.toString('hex'); }
+function caseDocBufFromRow(d) {
+  if (!d) return null;
+  if (typeof d === 'string' && d.startsWith('\\x')) return Buffer.from(d.slice(2), 'hex');
+  if (typeof d === 'string') return Buffer.from(d, 'base64');
+  if (Buffer.isBuffer(d)) return d;
+  return null;
+}
+
+app.all('/api/bureau/cases.php', async (req, res) => {
+  try {
+    if (!(await authGuard(req, res))) return;
+    if (!permGuard(req, res, 'projects')) return;
+    const u = req.user;
+    const isAdmin = u.role === 'admin' || u.role === 'super_admin';
+    const isSuperAdmin = u.role === 'super_admin';
+    const { action, id } = req.query;
+
+    // ── Vue 360° d'un dossier ──────────────────────────────────────────────────
+    if (action === 'get' && req.method === 'GET') {
+      const projectId = +id;
+      const { data: project, error: pErr } = await supabase
+        .from('projects')
+        .select('*, assigned_user:users!assigned_to(full_name)')
+        .eq('id', projectId)
+        .maybeSingle();
+      if (pErr) return res.status(500).json({ error: pErr.message });
+      if (!project) return res.status(404).json({ error: 'Dossier introuvable' });
+
+      const [milestones, events, documents, links] = await Promise.all([
+        supabase.from('case_milestones').select('*, completed_by_user:users!completed_by(full_name)').eq('project_id', projectId).order('order_index').order('created_at'),
+        supabase.from('case_events').select('*, created_by_user:users!created_by(full_name)').eq('project_id', projectId).order('scheduled_at'),
+        supabase.from('case_documents').select('id, title, kind, description, filename, mime, size_bytes, uploaded_by_user_id, uploaded_by_client_id, visible_to_client, confidential, created_at, uploader_user:users!uploaded_by_user_id(full_name), uploader_client:clients!uploaded_by_client_id(name)').eq('project_id', projectId).order('created_at', { ascending: false }),
+        supabase.from('case_clients').select('role, added_at, client:clients(id,name,email,company,phone,active)').eq('project_id', projectId),
+      ]);
+
+      return res.json({
+        project: { ...project, agent_name: project.assigned_user?.full_name ?? null, assigned_user: undefined },
+        milestones: (milestones.data ?? []).map((m) => ({ ...m, completed_by_name: m.completed_by_user?.full_name ?? null, completed_by_user: undefined })),
+        events:     (events.data     ?? []).map((e) => ({ ...e, created_by_name: e.created_by_user?.full_name ?? null, created_by_user: undefined })),
+        documents:  (documents.data  ?? []).map((d) => ({
+          ...d,
+          uploader_user: undefined, uploader_client: undefined,
+          uploaded_by_name: d.uploader_user?.full_name ?? d.uploader_client?.name ?? null,
+          uploaded_by_kind: d.uploaded_by_user_id ? 'cabinet' : (d.uploaded_by_client_id ? 'client' : 'inconnu'),
+        })),
+        clients: (links.data ?? []).map((l) => ({ ...l.client, role: l.role, added_at: l.added_at, client: undefined })),
+      });
+    }
+
+    // ── Lier / délier un client au dossier ─────────────────────────────────────
+    if (action === 'attach_client' && req.method === 'POST') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const projectId = +id;
+      const clientId = +req.body?.client_id;
+      const role = String(req.body?.role || 'principal').slice(0, 40);
+      if (!clientId) return res.status(400).json({ error: 'client_id requis' });
+      const { error } = await supabase.from('case_clients').upsert({ project_id: projectId, client_id: clientId, role, added_by: u.id }, { onConflict: 'project_id,client_id' });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+    if (action === 'detach_client' && req.method === 'DELETE') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const projectId = +id;
+      const clientId = +req.query?.client_id;
+      if (!clientId) return res.status(400).json({ error: 'client_id requis' });
+      const { error } = await supabase.from('case_clients').delete().eq('project_id', projectId).eq('client_id', clientId);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    // ── Milestones (étapes) ────────────────────────────────────────────────────
+    if (action === 'milestone_create' && req.method === 'POST') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const projectId = +id;
+      const b = req.body || {};
+      const payload = {
+        project_id: projectId,
+        title: String(b.title ?? '').trim().slice(0, 240),
+        description: b.description ? String(b.description).slice(0, 4000) : null,
+        due_date: b.due_date || null,
+        status: ['a_faire','en_cours','termine','reporte','annule'].includes(b.status) ? b.status : 'a_faire',
+        order_index: Number.isFinite(+b.order_index) ? +b.order_index : 0,
+        visible_to_client: b.visible_to_client !== false,
+        created_by: u.id,
+      };
+      if (!payload.title) return res.status(400).json({ error: 'Titre requis' });
+      const { data, error } = await supabase.from('case_milestones').insert(payload).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, milestone: data });
+    }
+    if (action === 'milestone_update' && req.method === 'PUT') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const milestoneId = +id;
+      const b = req.body || {};
+      const update = {};
+      if (b.title !== undefined)             update.title = String(b.title).slice(0, 240);
+      if (b.description !== undefined)       update.description = b.description ? String(b.description).slice(0, 4000) : null;
+      if (b.due_date !== undefined)          update.due_date = b.due_date || null;
+      if (b.status !== undefined && ['a_faire','en_cours','termine','reporte','annule'].includes(b.status)) update.status = b.status;
+      if (b.order_index !== undefined && Number.isFinite(+b.order_index)) update.order_index = +b.order_index;
+      if (b.visible_to_client !== undefined) update.visible_to_client = !!b.visible_to_client;
+      // Si on passe à "termine" et que completed_at est vide → marquer maintenant
+      if (update.status === 'termine') {
+        update.completed_at = new Date().toISOString();
+        update.completed_by = u.id;
+      }
+      if (b.status && b.status !== 'termine') {
+        update.completed_at = null;
+        update.completed_by = null;
+      }
+      const { error } = await supabase.from('case_milestones').update(update).eq('id', milestoneId);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+    if (action === 'milestone_delete' && req.method === 'DELETE') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const { error } = await supabase.from('case_milestones').delete().eq('id', +id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    // ── Events (audiences/RDV/échéances) ───────────────────────────────────────
+    if (action === 'event_create' && req.method === 'POST') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const projectId = +id;
+      const b = req.body || {};
+      const payload = {
+        project_id: projectId,
+        type: ['audience','rdv','echeance','depot_pieces','consultation','autre'].includes(b.type) ? b.type : 'rdv',
+        title: String(b.title ?? '').trim().slice(0, 240),
+        location: b.location ? String(b.location).trim().slice(0, 300) : null,
+        scheduled_at: b.scheduled_at,
+        duration_minutes: Number.isFinite(+b.duration_minutes) ? +b.duration_minutes : 60,
+        notes_internal: b.notes_internal ? String(b.notes_internal).slice(0, 4000) : null,
+        notes_client_facing: b.notes_client_facing ? String(b.notes_client_facing).slice(0, 4000) : null,
+        visible_to_client: b.visible_to_client !== false,
+        created_by: u.id,
+      };
+      if (!payload.title) return res.status(400).json({ error: 'Titre requis' });
+      if (!payload.scheduled_at) return res.status(400).json({ error: 'Date/heure requise' });
+      const { data, error } = await supabase.from('case_events').insert(payload).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, event: data });
+    }
+    if (action === 'event_update' && req.method === 'PUT') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const eventId = +id;
+      const b = req.body || {};
+      const update = {};
+      if (b.type !== undefined && ['audience','rdv','echeance','depot_pieces','consultation','autre'].includes(b.type)) update.type = b.type;
+      if (b.title !== undefined)               update.title = String(b.title).slice(0, 240);
+      if (b.location !== undefined)            update.location = b.location ? String(b.location).slice(0, 300) : null;
+      if (b.scheduled_at !== undefined)        update.scheduled_at = b.scheduled_at;
+      if (b.duration_minutes !== undefined)    update.duration_minutes = +b.duration_minutes || 60;
+      if (b.notes_internal !== undefined)      update.notes_internal = b.notes_internal ? String(b.notes_internal).slice(0, 4000) : null;
+      if (b.notes_client_facing !== undefined) update.notes_client_facing = b.notes_client_facing ? String(b.notes_client_facing).slice(0, 4000) : null;
+      if (b.visible_to_client !== undefined)   update.visible_to_client = !!b.visible_to_client;
+      if (b.completed_at !== undefined)        update.completed_at = b.completed_at || null;
+      if (b.outcome !== undefined)             update.outcome = b.outcome ? String(b.outcome).slice(0, 4000) : null;
+      const { error } = await supabase.from('case_events').update(update).eq('id', eventId);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+    if (action === 'event_delete' && req.method === 'DELETE') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const { error } = await supabase.from('case_events').delete().eq('id', +id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    // ── Documents (upload base64 JSON, comme blog/cv) ──────────────────────────
+    if (action === 'document_upload' && req.method === 'POST') {
+      const projectId = +id;
+      const b = req.body || {};
+      const mime = String(b.mime || '');
+      if (!CASE_DOC_MIMES.has(mime)) return res.status(415).json({ error: 'Type non supporté (PDF/DOC/DOCX/XLS/XLSX/JPG/PNG/WEBP/TXT).' });
+      if (typeof b.data_base64 !== 'string' || b.data_base64.length < 64) return res.status(400).json({ error: 'data_base64 absent ou invalide' });
+      const buf = Buffer.from(b.data_base64.replace(/^data:[^,]+,/, ''), 'base64');
+      if (buf.length === 0) return res.status(400).json({ error: 'Document vide' });
+      if (buf.length > CASE_DOC_MAX) return res.status(413).json({ error: `Document trop lourd (max ${CASE_DOC_MAX/1024/1024} Mo)` });
+      const payload = {
+        project_id: projectId,
+        title: String(b.title ?? b.filename ?? 'Document').trim().slice(0, 240),
+        kind: ['preuve','contrat','jugement','conclusions','expertise','correspondance','identite','autre'].includes(b.kind) ? b.kind : 'autre',
+        description: b.description ? String(b.description).slice(0, 4000) : null,
+        filename: b.filename ? String(b.filename).slice(0, 240) : null,
+        mime,
+        size_bytes: buf.length,
+        data: caseDocBytea(buf),
+        uploaded_by_user_id: u.id,
+        visible_to_client: b.visible_to_client !== false,
+        confidential: !!b.confidential,
+      };
+      const { data, error } = await supabase.from('case_documents')
+        .insert(payload)
+        .select('id, title, kind, description, filename, mime, size_bytes, visible_to_client, confidential, created_at')
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true, document: data });
+    }
+    if (action === 'document_update' && req.method === 'PUT') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const docId = +id;
+      const b = req.body || {};
+      const update = {};
+      if (b.title !== undefined)             update.title = String(b.title).slice(0, 240);
+      if (b.kind !== undefined && ['preuve','contrat','jugement','conclusions','expertise','correspondance','identite','autre'].includes(b.kind)) update.kind = b.kind;
+      if (b.description !== undefined)       update.description = b.description ? String(b.description).slice(0, 4000) : null;
+      if (b.visible_to_client !== undefined) update.visible_to_client = !!b.visible_to_client;
+      if (b.confidential !== undefined)      update.confidential = !!b.confidential;
+      const { error } = await supabase.from('case_documents').update(update).eq('id', docId);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+    if (action === 'document_delete' && req.method === 'DELETE') {
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
+      const { error } = await supabase.from('case_documents').delete().eq('id', +id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+    if (action === 'document' && req.method === 'GET') {
+      // Téléchargement (côté bureau, peu importe la visibilité client)
+      const docId = +id;
+      const { data, error } = await supabase.from('case_documents').select('title, filename, mime, data').eq('id', docId).maybeSingle();
+      if (error) return res.status(500).send(error.message);
+      if (!data) return res.status(404).send('Document introuvable');
+      const buf = caseDocBufFromRow(data.data);
+      if (!buf) return res.status(500).send('Format binaire inconnu');
+      const filename = (data.filename || data.title || `doc-${docId}`).replace(/[\r\n"]/g, '_');
+      res.set({
+        'Content-Type': data.mime || 'application/octet-stream',
+        'Content-Length': String(buf.length),
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        'Cache-Control': 'no-store, private',
+      });
+      return res.end(buf);
+    }
+
+    // Suppression seule (super_admin)
+    if (action === 'delete_case' && req.method === 'DELETE') {
+      if (!isSuperAdmin) return res.status(403).json({ error: 'Réservé au super administrateur.' });
+      // Sup les dossier (cascade prend documents/milestones/events/case_clients)
+      const { error } = await supabase.from('projects').delete().eq('id', +id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.json({ success: true });
+    }
+
+    return res.status(404).json({ error: 'Action non trouvée' });
+  } catch (e) {
+    console.error('cases.php', e);
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2812,6 +3096,139 @@ function quickParseMime(source) {
   }
   return { text, html };
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CASES — Vue client (lecture seule des dossiers du client connecté)
+// Filtre tout par visible_to_client / confidential pour ne JAMAIS exposer
+// d'info confidentielle équipe.
+// ══════════════════════════════════════════════════════════════════════════════
+async function clientHasAccessToCase(clientId, projectId) {
+  const { data } = await supabase
+    .from('case_clients')
+    .select('project_id')
+    .eq('client_id', clientId)
+    .eq('project_id', projectId)
+    .maybeSingle();
+  return !!data;
+}
+
+app.all('/api/client/cases.php', async (req, res) => {
+  try {
+    const c = await clientGuard(req, res); if (!c) return;
+    const { action, id } = req.query;
+
+    // ── Liste des dossiers du client (multi) ───────────────────────────────────
+    if (action === 'list' && req.method === 'GET') {
+      const { data: links } = await supabase
+        .from('case_clients')
+        .select('role, added_at, project:projects(id, name, status, priority, current_phase, practice_area, case_number, next_action, next_action_date, deadline, progress, created_at, updated_at, assigned_user:users!assigned_to(full_name))')
+        .eq('client_id', c.id);
+      const cases = (links ?? [])
+        .filter((l) => l.project) // au cas où orphan
+        .map((l) => ({ ...l.project, role_in_case: l.role, added_at: l.added_at, agent_name: l.project.assigned_user?.full_name ?? null, assigned_user: undefined }));
+      // Compatibilité legacy : si clients.project_id existe et qu'aucun lien M2M, l'ajouter au vol
+      if (cases.length === 0 && c.project_id) {
+        const { data: legacy } = await supabase
+          .from('projects')
+          .select('id, name, status, priority, current_phase, practice_area, case_number, next_action, next_action_date, deadline, progress, created_at, updated_at, assigned_user:users!assigned_to(full_name)')
+          .eq('id', c.project_id).maybeSingle();
+        if (legacy) cases.push({ ...legacy, role_in_case: 'principal', agent_name: legacy.assigned_user?.full_name ?? null, assigned_user: undefined });
+      }
+      cases.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+      return res.json({ cases });
+    }
+
+    // ── Vue détaillée d'UN dossier ────────────────────────────────────────────
+    if (action === 'get' && req.method === 'GET') {
+      const projectId = +id;
+      const allowed = await clientHasAccessToCase(c.id, projectId) || (c.project_id === projectId);
+      if (!allowed) return res.status(403).json({ error: 'Accès refusé' });
+
+      const [project, milestones, events, documents] = await Promise.all([
+        supabase.from('projects').select('id, name, description, status, priority, current_phase, practice_area, case_number, next_action, next_action_date, deadline, progress, created_at, updated_at, assigned_user:users!assigned_to(full_name)').eq('id', projectId).maybeSingle(),
+        supabase.from('case_milestones').select('id, title, description, due_date, completed_at, status, order_index, created_at').eq('project_id', projectId).eq('visible_to_client', true).order('order_index').order('created_at'),
+        supabase.from('case_events').select('id, type, title, location, scheduled_at, duration_minutes, notes_client_facing, completed_at, outcome, created_at').eq('project_id', projectId).eq('visible_to_client', true).order('scheduled_at'),
+        supabase.from('case_documents').select('id, title, kind, description, filename, mime, size_bytes, uploaded_by_user_id, uploaded_by_client_id, created_at, uploader_user:users!uploaded_by_user_id(full_name)').eq('project_id', projectId).eq('visible_to_client', true).eq('confidential', false).order('created_at', { ascending: false }),
+      ]);
+      if (!project.data) return res.status(404).json({ error: 'Dossier introuvable' });
+
+      return res.json({
+        project: { ...project.data, agent_name: project.data.assigned_user?.full_name ?? null, assigned_user: undefined },
+        milestones: milestones.data ?? [],
+        events:     events.data ?? [],
+        documents: (documents.data ?? []).map((d) => ({
+          ...d,
+          uploader_user: undefined,
+          uploaded_by_name: d.uploader_user?.full_name ?? null,
+          uploaded_by_kind: d.uploaded_by_user_id ? 'cabinet' : (d.uploaded_by_client_id ? 'client' : 'inconnu'),
+        })),
+      });
+    }
+
+    // ── Téléchargement d'un document (vérifie visibilité + accès au dossier) ──
+    if (action === 'document' && req.method === 'GET') {
+      const docId = +id;
+      const { data: doc } = await supabase
+        .from('case_documents')
+        .select('project_id, title, filename, mime, data, visible_to_client, confidential')
+        .eq('id', docId)
+        .maybeSingle();
+      if (!doc) return res.status(404).send('Document introuvable');
+      if (!doc.visible_to_client || doc.confidential) return res.status(403).send('Accès refusé');
+      const allowed = await clientHasAccessToCase(c.id, doc.project_id) || (c.project_id === doc.project_id);
+      if (!allowed) return res.status(403).send('Accès refusé');
+      const buf = caseDocBufFromRow(doc.data);
+      if (!buf) return res.status(500).send('Format binaire inconnu');
+      const filename = (doc.filename || doc.title || `doc-${docId}`).replace(/[\r\n"]/g, '_');
+      res.set({
+        'Content-Type': doc.mime || 'application/octet-stream',
+        'Content-Length': String(buf.length),
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+        'Cache-Control': 'no-store, private',
+      });
+      return res.end(buf);
+    }
+
+    // ── Le client envoie une pièce au cabinet ─────────────────────────────────
+    if (action === 'upload_document' && req.method === 'POST') {
+      const projectId = +id;
+      const allowed = await clientHasAccessToCase(c.id, projectId) || (c.project_id === projectId);
+      if (!allowed) return res.status(403).json({ error: 'Accès refusé' });
+      const b = req.body || {};
+      const mime = String(b.mime || '');
+      if (!CASE_DOC_MIMES.has(mime)) return res.status(415).json({ error: 'Type non supporté (PDF/DOC/DOCX/XLS/XLSX/JPG/PNG/WEBP/TXT).' });
+      if (typeof b.data_base64 !== 'string' || b.data_base64.length < 64) return res.status(400).json({ error: 'data_base64 absent ou invalide' });
+      const buf = Buffer.from(b.data_base64.replace(/^data:[^,]+,/, ''), 'base64');
+      if (buf.length === 0) return res.status(400).json({ error: 'Document vide' });
+      if (buf.length > CASE_DOC_MAX) return res.status(413).json({ error: `Document trop lourd (max ${CASE_DOC_MAX/1024/1024} Mo)` });
+      const payload = {
+        project_id: projectId,
+        title: String(b.title ?? b.filename ?? 'Pièce client').trim().slice(0, 240),
+        kind: ['preuve','contrat','jugement','conclusions','expertise','correspondance','identite','autre'].includes(b.kind) ? b.kind : 'autre',
+        description: b.description ? String(b.description).slice(0, 4000) : null,
+        filename: b.filename ? String(b.filename).slice(0, 240) : null,
+        mime,
+        size_bytes: buf.length,
+        data: caseDocBytea(buf),
+        uploaded_by_client_id: c.id,
+        visible_to_client: true,
+        confidential: false,
+      };
+      const { data, error } = await supabase.from('case_documents')
+        .insert(payload)
+        .select('id, title, kind, filename, mime, size_bytes, created_at')
+        .single();
+      if (error) return res.status(500).json({ error: error.message });
+      sendWhatsApp(`📎 *Nouvelle pièce client (Afrilex)*\n👤 ${c.name}\n📁 Dossier #${projectId}\n📄 ${payload.title} (${(buf.length/1024).toFixed(0)} Ko)\n\n🔗 /bureau/projets\n⏰ ${new Date().toLocaleString('fr-FR')}`);
+      return res.json({ success: true, document: data });
+    }
+
+    return res.status(404).json({ error: 'Action non trouvée' });
+  } catch (e) {
+    console.error('client/cases.php', e);
+    return res.status(500).json({ error: String(e?.message || e) });
+  }
+});
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CHAT IA — Proxy Groq

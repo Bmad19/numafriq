@@ -74,8 +74,62 @@ export const projectsApi = {
   get:    (id: number) => request<Project>('projects.php', 'GET', undefined, { action: 'get', id: String(id) }),
   create: (data: Partial<Project>) => request('projects.php', 'POST', data, { action: 'create' }),
   update: (id: number, data: Partial<Project>) => request('projects.php', 'PUT', data, { action: 'update', id: String(id) }),
+  updateMeta: (id: number, data: Partial<Pick<Project, 'case_number' | 'practice_area' | 'current_phase' | 'next_action' | 'next_action_date'>>) =>
+    request('projects.php', 'PUT', data, { action: 'update_meta', id: String(id) }),
   delete: (id: number) => request('projects.php', 'DELETE', undefined, { action: 'delete', id: String(id) }),
   stats:  () => request<ProjectStats>('projects.php', 'GET', undefined, { action: 'stats' }),
+};
+
+// ── Cases (vue 360° d'un dossier + sous-collections) ─────────────────────────
+export const casesApi = {
+  get: (projectId: number) => request<CaseDetail>('cases.php', 'GET', undefined, { action: 'get', id: String(projectId) }),
+
+  attachClient:    (projectId: number, clientId: number, role = 'principal') =>
+    request('cases.php', 'POST', { client_id: clientId, role }, { action: 'attach_client', id: String(projectId) }),
+  detachClient:    (projectId: number, clientId: number) =>
+    request('cases.php', 'DELETE', undefined, { action: 'detach_client', id: String(projectId), client_id: String(clientId) }),
+
+  milestoneCreate: (projectId: number, data: Partial<CaseMilestone>) =>
+    request<{ success: boolean; milestone: CaseMilestone }>('cases.php', 'POST', data, { action: 'milestone_create', id: String(projectId) }),
+  milestoneUpdate: (milestoneId: number, data: Partial<CaseMilestone>) =>
+    request('cases.php', 'PUT', data, { action: 'milestone_update', id: String(milestoneId) }),
+  milestoneDelete: (milestoneId: number) =>
+    request('cases.php', 'DELETE', undefined, { action: 'milestone_delete', id: String(milestoneId) }),
+
+  eventCreate: (projectId: number, data: Partial<CaseEvent>) =>
+    request<{ success: boolean; event: CaseEvent }>('cases.php', 'POST', data, { action: 'event_create', id: String(projectId) }),
+  eventUpdate: (eventId: number, data: Partial<CaseEvent>) =>
+    request('cases.php', 'PUT', data, { action: 'event_update', id: String(eventId) }),
+  eventDelete: (eventId: number) =>
+    request('cases.php', 'DELETE', undefined, { action: 'event_delete', id: String(eventId) }),
+
+  documentUpload: (projectId: number, payload: {
+    title: string; kind?: CaseDocument['kind']; description?: string; filename?: string;
+    mime: string; data_base64: string; visible_to_client?: boolean; confidential?: boolean;
+  }) => request<{ success: boolean; document: CaseDocument }>('cases.php', 'POST', payload, { action: 'document_upload', id: String(projectId) }),
+  documentUpdate: (docId: number, data: Partial<CaseDocument>) =>
+    request('cases.php', 'PUT', data, { action: 'document_update', id: String(docId) }),
+  documentDelete: (docId: number) =>
+    request('cases.php', 'DELETE', undefined, { action: 'document_delete', id: String(docId) }),
+
+  /** Téléchargement document (auth via header → blob URL → nouvel onglet). */
+  openDocument: async (docId: number, suggestedName?: string): Promise<void> => {
+    const url = new URL(`${BASE}/cases.php`, window.location.origin);
+    url.searchParams.set('action', 'document');
+    url.searchParams.set('id', String(docId));
+    const token = localStorage.getItem('bureau_token') ?? '';
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`Erreur ${res.status}`);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const win = window.open(blobUrl, '_blank', 'noopener,noreferrer');
+    if (!win) {
+      const a = document.createElement('a');
+      a.href = blobUrl; a.download = suggestedName || `doc-${docId}`; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  },
 };
 
 // ── Missions ─────────────────────────────────────────────────────────────────
@@ -190,7 +244,83 @@ export type Project = {
   priority: 'basse'|'normale'|'haute'|'urgente';
   budget: number; deadline?: string; progress: number;
   assigned_to?: number; agent_name?: string;
+  case_number?: string | null;
+  practice_area?: string | null;
+  current_phase?: string | null;
+  next_action?: string | null;
+  next_action_date?: string | null;
   created_at: string; updated_at: string; missions?: Mission[];
+};
+
+// ── Dossiers (cases) — sous-collections d'un Project ─────────────────────────
+export type CaseMilestone = {
+  id: number;
+  project_id: number;
+  title: string;
+  description?: string | null;
+  due_date?: string | null;
+  completed_at?: string | null;
+  completed_by?: number | null;
+  completed_by_name?: string | null;
+  status: 'a_faire' | 'en_cours' | 'termine' | 'reporte' | 'annule';
+  order_index: number;
+  visible_to_client: boolean;
+  created_at: string;
+  updated_at?: string;
+};
+
+export type CaseEvent = {
+  id: number;
+  project_id: number;
+  type: 'audience' | 'rdv' | 'echeance' | 'depot_pieces' | 'consultation' | 'autre';
+  title: string;
+  location?: string | null;
+  scheduled_at: string;
+  duration_minutes?: number | null;
+  notes_internal?: string | null;
+  notes_client_facing?: string | null;
+  visible_to_client: boolean;
+  completed_at?: string | null;
+  outcome?: string | null;
+  created_at: string;
+  created_by_name?: string | null;
+};
+
+export type CaseDocument = {
+  id: number;
+  project_id?: number;
+  title: string;
+  kind: 'preuve' | 'contrat' | 'jugement' | 'conclusions' | 'expertise' | 'correspondance' | 'identite' | 'autre';
+  description?: string | null;
+  filename?: string | null;
+  mime: string;
+  size_bytes?: number | null;
+  uploaded_by_user_id?: number | null;
+  uploaded_by_client_id?: number | null;
+  uploaded_by_name?: string | null;
+  uploaded_by_kind?: 'cabinet' | 'client' | 'inconnu';
+  visible_to_client: boolean;
+  confidential: boolean;
+  created_at: string;
+};
+
+export type CaseClient = {
+  id: number;
+  name: string;
+  email: string;
+  company?: string | null;
+  phone?: string | null;
+  active: boolean;
+  role: string;
+  added_at: string;
+};
+
+export type CaseDetail = {
+  project: Project;
+  milestones: CaseMilestone[];
+  events: CaseEvent[];
+  documents: CaseDocument[];
+  clients: CaseClient[];
 };
 
 export type ProjectStats = { total: number; en_cours: number; termine: number; en_pause: number; budget_total: number };

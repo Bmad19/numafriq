@@ -50,6 +50,95 @@ export const clientMessagesApi = {
   unread:() => request<{ count: number }>('messages.php', 'GET', undefined, { action: 'unread' }),
 };
 
+// ── Cases (dossiers du client) ───────────────────────────────────────────────
+export type ClientCaseSummary = {
+  id: number;
+  name: string;
+  status: string;
+  priority?: string;
+  current_phase?: string | null;
+  practice_area?: string | null;
+  case_number?: string | null;
+  next_action?: string | null;
+  next_action_date?: string | null;
+  deadline?: string | null;
+  progress: number;
+  agent_name?: string | null;
+  role_in_case?: string;
+  created_at: string;
+  updated_at?: string;
+};
+
+export type ClientCaseMilestone = {
+  id: number;
+  title: string;
+  description?: string | null;
+  due_date?: string | null;
+  completed_at?: string | null;
+  status: 'a_faire' | 'en_cours' | 'termine' | 'reporte' | 'annule';
+  order_index: number;
+  created_at: string;
+};
+
+export type ClientCaseEvent = {
+  id: number;
+  type: 'audience' | 'rdv' | 'echeance' | 'depot_pieces' | 'consultation' | 'autre';
+  title: string;
+  location?: string | null;
+  scheduled_at: string;
+  duration_minutes?: number | null;
+  notes_client_facing?: string | null;
+  completed_at?: string | null;
+  outcome?: string | null;
+};
+
+export type ClientCaseDocument = {
+  id: number;
+  title: string;
+  kind: string;
+  description?: string | null;
+  filename?: string | null;
+  mime: string;
+  size_bytes?: number | null;
+  uploaded_by_kind: 'cabinet' | 'client' | 'inconnu';
+  uploaded_by_name?: string | null;
+  created_at: string;
+};
+
+export type ClientCaseDetail = {
+  project: ClientCaseSummary & { description?: string | null };
+  milestones: ClientCaseMilestone[];
+  events: ClientCaseEvent[];
+  documents: ClientCaseDocument[];
+};
+
+export const clientCasesApi = {
+  list: () => request<{ cases: ClientCaseSummary[] }>('cases.php', 'GET', undefined, { action: 'list' }),
+  get:  (projectId: number) => request<ClientCaseDetail>('cases.php', 'GET', undefined, { action: 'get', id: String(projectId) }),
+  uploadDocument: (projectId: number, payload: {
+    title: string; kind?: string; description?: string; filename?: string;
+    mime: string; data_base64: string;
+  }) => request<{ success: boolean; document: ClientCaseDocument }>('cases.php', 'POST', payload, { action: 'upload_document', id: String(projectId) }),
+  /** Téléchargement document (auth via header → blob URL → ouvre nouvel onglet). */
+  openDocument: async (docId: number, suggestedName?: string): Promise<void> => {
+    const url = new URL(`${BASE}/cases.php`, window.location.origin);
+    url.searchParams.set('action', 'document');
+    url.searchParams.set('id', String(docId));
+    const token = localStorage.getItem('client_token') ?? '';
+    const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`Erreur ${res.status}`);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const win = window.open(blobUrl, '_blank', 'noopener,noreferrer');
+    if (!win) {
+      const a = document.createElement('a');
+      a.href = blobUrl; a.download = suggestedName || `doc-${docId}`; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  },
+};
+
 // For agents
 export const agentClientApi = {
   conversations: () => request<ClientConversation[]>('messages.php', 'GET', undefined, { action: 'conversations' }),

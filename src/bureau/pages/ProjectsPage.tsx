@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { projectsApi, usersApi, type Project, type BureauUser } from "../api";
 import { useAuth, hasRole } from "../BureauContext";
+import { CaseDetailDrawer } from "../components/CaseDetailDrawer";
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   en_cours: { label: "En cours",  color: "text-lime   bg-lime/10   border-lime/20"   },
@@ -25,6 +26,7 @@ export function ProjectsPage() {
   const [form, setForm]         = useState<Partial<Project>>(empty);
   const [filter, setFilter]     = useState("tous");
   const [msg, setMsg]           = useState("");
+  const [openCaseId, setOpenCaseId] = useState<number | null>(null);
 
   async function load() {
     setLoading(true);
@@ -106,18 +108,24 @@ export function ProjectsPage() {
                   <span>{p.budget ? `${(p.budget/1000).toFixed(0)}k FCFA` : "–"}</span>
                   {p.agent_name && <span className="text-violet/80">{p.agent_name}</span>}
                 </div>
-                {isAdmin && (
-                  <div className="flex gap-2 mt-1">
-                    <button onClick={() => { setForm(p); setModal("edit"); }}
-                      className="flex-1 rounded-xl border border-white/10 py-2 text-xs text-white/50 hover:text-white hover:border-white/25 transition">
-                      Modifier
-                    </button>
-                    <button onClick={() => deleteProject(p.id)}
-                      className="rounded-xl border border-coral/25 px-4 py-2 text-xs text-coral hover:bg-coral/10 transition">
-                      ×
-                    </button>
-                  </div>
-                )}
+                <div className="flex gap-2 mt-1">
+                  <button onClick={() => setOpenCaseId(p.id)}
+                    className="flex-1 rounded-xl bg-coral/15 border border-coral/30 py-2 text-xs font-bold text-coral hover:bg-coral/25 transition">
+                    📂 Ouvrir le dossier
+                  </button>
+                  {isAdmin && (
+                    <>
+                      <button onClick={() => { setForm(p); setModal("edit"); }}
+                        className="rounded-xl border border-white/10 px-3 py-2 text-xs text-white/55 hover:text-white hover:border-white/25 transition" title="Modifier la fiche">
+                        ✎
+                      </button>
+                      <button onClick={() => deleteProject(p.id)}
+                        className="rounded-xl border border-coral/25 px-3 py-2 text-xs text-coral hover:bg-coral/10 transition" title="Supprimer">
+                        ×
+                      </button>
+                    </>
+                  )}
+                </div>
               </motion.div>
             );
           })}
@@ -188,6 +196,8 @@ export function ProjectsPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <CaseDetailDrawer projectId={openCaseId} onClose={() => setOpenCaseId(null)} onChange={load} />
     </div>
   );
 }
