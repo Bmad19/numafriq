@@ -428,8 +428,8 @@ export function MailboxPage() {
           </div>
 
           {/* Boîte */}
-          <div className="grid gap-4 lg:grid-cols-[minmax(320px,420px)_1fr]">
-            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden flex flex-col max-h-[70vh]">
+          <div className="grid gap-4 lg:grid-cols-[minmax(240px,300px)_1fr]">
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden flex flex-col max-h-[85vh]">
               <div className="border-b border-white/[0.06] p-3 flex items-center gap-2">
                 <input
                   value={search}
@@ -459,24 +459,21 @@ export function MailboxPage() {
                       <li key={m.uid}>
                         <button
                           onClick={() => setSelectedUid(m.uid)}
-                          className={`w-full text-left px-4 py-3 transition hover:bg-white/[0.03] ${
+                          className={`w-full text-left px-3 py-2 transition hover:bg-white/[0.03] ${
                             m.uid === selectedUid ? "bg-coral/[0.07]" : ""
                           }`}
                         >
                           <div className="flex items-start gap-2">
-                            <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${m.seen ? "bg-white/20" : "bg-coral"}`} aria-hidden />
+                            <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${m.seen ? "bg-white/20" : "bg-coral"}`} aria-hidden />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center justify-between gap-2">
-                                <p className={`truncate text-sm ${m.seen ? "text-white/75" : "text-white font-semibold"}`}>
+                                <p className={`truncate text-xs ${m.seen ? "text-white/75" : "text-white font-semibold"}`}>
                                   {m.from_name || m.from_address || "?"}
                                 </p>
                                 <span className="text-[10px] text-white/40 whitespace-nowrap">{fmtDate(m.date)}</span>
                               </div>
-                              <p className={`mt-0.5 truncate text-xs ${m.seen ? "text-white/55" : "text-white/85 font-medium"}`}>
+                              <p className={`mt-0.5 truncate text-[11px] ${m.seen ? "text-white/55" : "text-white/85 font-medium"}`}>
                                 {m.subject}
-                              </p>
-                              <p className="mt-0.5 truncate text-[10px] text-white/35">
-                                {m.from_address} • {fmtSize(m.size)}
                               </p>
                             </div>
                           </div>
@@ -495,7 +492,7 @@ export function MailboxPage() {
               )}
             </div>
 
-            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden flex flex-col max-h-[70vh]">
+            <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] overflow-hidden flex flex-col max-h-[85vh] min-h-[600px]">
               {selectedUid == null ? (
                 <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
                   <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white/[0.04] text-2xl">✉️</div>
@@ -582,10 +579,10 @@ export function MailboxPage() {
                         title={openMessage.subject}
                         srcDoc={openMessage.html}
                         sandbox="allow-same-origin"
-                        className="w-full min-h-[400px] bg-white"
+                        className="w-full h-full min-h-[60vh] bg-white"
                       />
                     ) : openMessage.text ? (
-                      <pre className="whitespace-pre-wrap p-5 text-sm leading-relaxed text-white/85 font-sans">{openMessage.text}</pre>
+                      <pre className="whitespace-pre-wrap p-6 text-[15px] leading-7 text-white/90 font-sans">{openMessage.text}</pre>
                     ) : (
                       <p className="p-5 text-sm text-white/55 italic">
                         (Aucun corps texte/HTML lisible — le message contient peut-être uniquement des pièces jointes ou un format binaire.)
