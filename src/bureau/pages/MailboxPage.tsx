@@ -512,6 +512,22 @@ export function MailboxPage() {
                   </div>
 
                   <div className="flex-1 overflow-y-auto styled-scrollbar">
+                    {openMessage.attachments && openMessage.attachments.length > 0 && (
+                      <div className="border-b border-white/[0.06] px-5 py-3 bg-white/[0.02]">
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-white/45 mb-2">
+                          {openMessage.attachments.length} pièce{openMessage.attachments.length > 1 ? "s" : ""} jointe{openMessage.attachments.length > 1 ? "s" : ""}
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {openMessage.attachments.map((att, i) => (
+                            <div key={`${att.filename}-${i}`} className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/80">
+                              <span>📎</span>
+                              <span className="truncate max-w-[180px]" title={att.filename}>{att.filename}</span>
+                              <span className="text-white/45">{fmtSize(att.size)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {openMessage.html ? (
                       <iframe
                         title={openMessage.subject}
@@ -522,7 +538,9 @@ export function MailboxPage() {
                     ) : openMessage.text ? (
                       <pre className="whitespace-pre-wrap p-5 text-sm leading-relaxed text-white/85 font-sans">{openMessage.text}</pre>
                     ) : (
-                      <p className="p-5 text-sm text-white/55 italic">(Corps vide ou format non géré)</p>
+                      <p className="p-5 text-sm text-white/55 italic">
+                        (Aucun corps texte/HTML lisible — le message contient peut-être uniquement des pièces jointes ou un format binaire.)
+                      </p>
                     )}
                   </div>
                 </>

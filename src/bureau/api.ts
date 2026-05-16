@@ -463,6 +463,12 @@ export type MailboxInbox = {
   messages: MailboxMessageSummary[];
 };
 
+export type MailboxAttachment = {
+  filename: string;
+  contentType: string;
+  size: number;
+};
+
 export type MailboxMessageDetail = MailboxMessageSummary & {
   message_id?: string | null;
   to_addresses?: string[];
@@ -470,6 +476,7 @@ export type MailboxMessageDetail = MailboxMessageSummary & {
   cc_addresses?: string[];
   text: string;
   html: string;
+  attachments?: MailboxAttachment[];
 };
 
 export const mailboxApi = {

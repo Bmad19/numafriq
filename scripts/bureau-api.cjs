@@ -32,6 +32,8 @@ let ImapFlow;
 try { ({ ImapFlow } = require('imapflow')); } catch { ImapFlow = null; }
 let nodemailer;
 try { nodemailer = require('nodemailer'); } catch { nodemailer = null; }
+let simpleParser;
+try { ({ simpleParser } = require('mailparser')); } catch { simpleParser = null; }
 
 // ── Supabase ──────────────────────────────────────────────────────────────────
 const SUPABASE_URL  = process.env.SUPABASE_URL  || '';
@@ -2233,62 +2235,24 @@ app.all('/api/bureau/mailbox.php', async (req, res) => {
       const htmlStr = typeof html === 'string' ? html : '';
       if (!textStr.trim() && !htmlStr.trim()) return res.status(400).json({ error: 'Corps du message vide.' });
 
-      const smtpHost = account.smtp_host || account.imap_host;
-      const smtpPort = account.smtp_port ?? 465;
-      const smtpSecure = account.smtp_secure ?? true;
-      const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: smtpPort,
-        secure: !!smtpSecure,
-        auth: { user: account.email, pass: decryptSecret(account.password_enc) },
-        connectionTimeout: 25000,
-        greetingTimeout: 15000,
+      const info = await sendViaSmtpResilient(account, {
+        to: toList, cc: ccList, bcc: bccList,
+        subject: subjStr || '(sans objet)',
+        text: textStr || undefined,
+        html: htmlStr || undefined,
+        inReplyTo: in_reply_to || undefined,
       });
-
-      try {
-        const info = await transporter.sendMail({
-          from: { name: account.label || account.email, address: account.email },
-          to: toList,
-          cc: ccList.length ? ccList : undefined,
-          bcc: bccList.length ? bccList : undefined,
-          subject: subjStr || '(sans objet)',
-          text: textStr || undefined,
-          html: htmlStr || undefined,
-          inReplyTo: in_reply_to || undefined,
-          references: in_reply_to ? [in_reply_to] : undefined,
-        });
-        // Best-effort : copie dans le dossier "Sent" via IMAP APPEND.
-        try {
-          await withImapClient(account, async (client) => {
-            const sentBoxes = ['Sent', 'INBOX.Sent', 'Sent Items', 'Sent Messages', 'Envoy\u00e9s', 'INBOX.Envoy\u00e9s'];
-            let target = null;
-            for (const name of sentBoxes) {
-              try {
-                const exists = await client.mailboxOpen(name).catch(() => null);
-                if (exists) { target = name; await client.mailboxClose(); break; }
-              } catch { /* try next */ }
-            }
-            if (!target) return;
-            // Reconstruit un email RFC822 simple (nodemailer renvoie raw via streamTransport, mais on l'a pas activé)
-            // → Append minimal : utilise info.message si disponible (pas le cas sans streamTransport).
-            // On skip si info.message absent — pas critique.
-            const raw = info.message || null;
-            if (raw) await client.append(target, raw, ['\\Seen']);
-          }, { timeoutMs: 20000 });
-        } catch (appendErr) {
-          console.warn('Sent folder append skipped:', appendErr?.message);
-        }
-        try { transporter.close(); } catch { /* ignore */ }
-        return res.json({
-          success: true,
-          messageId: info.messageId,
-          accepted: info.accepted,
-          rejected: info.rejected,
-        });
-      } catch (e) {
-        try { transporter.close(); } catch { /* ignore */ }
-        return res.status(502).json({ success: false, error: String(e?.message || e) });
+      if (!info.ok) {
+        return res.status(502).json({ success: false, error: info.error, attempted: info.attempted });
       }
+      // Best-effort : copie dans le dossier "Sent" — fire-and-forget, n'attend PAS la réponse.
+      appendToSentFolderInBackground(account, info.raw).catch(() => {});
+      return res.json({
+        success: true,
+        messageId: info.messageId,
+        accepted: info.accepted,
+        rejected: info.rejected,
+      });
     }
 
     if (action === 'message' && req.method === 'GET') {
@@ -2306,23 +2270,45 @@ app.all('/api/bureau/mailbox.php', async (req, res) => {
             if (!m) return null;
             const env = m.envelope || {};
             const fromAddr = (env.from && env.from[0]) || {};
-            // Parse minimaliste : extraire text/plain et text/html depuis source brute.
+
+            // Parse complet via mailparser (gère multipart imbriqué, quoted-printable, charsets,
+            // pièces jointes, images inline, etc.). Fallback sur parser maison si module absent.
+            let parsed = null;
+            if (simpleParser && m.source) {
+              try {
+                parsed = await simpleParser(m.source, { skipImageLinks: false, skipHtmlToText: false });
+              } catch (pe) {
+                console.warn('mailparser failed, fallback:', pe?.message);
+              }
+            }
             const sourceStr = m.source ? m.source.toString('utf8') : '';
-            const { text, html } = quickParseMime(sourceStr);
+            const fallback = parsed ? null : quickParseMime(sourceStr);
+
+            const text = parsed?.text ?? fallback?.text ?? '';
+            const html = parsed?.html ?? fallback?.html ?? '';
+            const attachments = (parsed?.attachments ?? [])
+              .filter((a) => !a.related)                                // exclure les images inline (dans le HTML)
+              .map((a) => ({
+                filename: a.filename || `piece-${a.contentId || 'jointe'}`,
+                contentType: a.contentType || 'application/octet-stream',
+                size: a.size ?? 0,
+              }));
+
             return {
               uid: m.uid,
               message_id: env.messageId || null,
               date: env.date || m.internalDate || null,
               subject: env.subject || '(sans objet)',
-              from_name: fromAddr.name || '',
-              from_address: fromAddr.address || '',
-              to: Array.isArray(env.to) ? env.to.map((a) => `${a.name ?? ''} <${a.address ?? ''}>`.trim()).join(', ') : '',
-              to_addresses: Array.isArray(env.to) ? env.to.map((a) => a.address).filter(Boolean) : [],
-              cc: Array.isArray(env.cc) ? env.cc.map((a) => `${a.name ?? ''} <${a.address ?? ''}>`.trim()).join(', ') : '',
-              cc_addresses: Array.isArray(env.cc) ? env.cc.map((a) => a.address).filter(Boolean) : [],
+              from_name: fromAddr.name || (parsed?.from?.value?.[0]?.name ?? ''),
+              from_address: fromAddr.address || (parsed?.from?.value?.[0]?.address ?? ''),
+              to: Array.isArray(env.to) ? env.to.map((a) => `${a.name ?? ''} <${a.address ?? ''}>`.trim()).join(', ') : (parsed?.to?.text ?? ''),
+              to_addresses: Array.isArray(env.to) ? env.to.map((a) => a.address).filter(Boolean) : (parsed?.to?.value?.map((a) => a.address).filter(Boolean) ?? []),
+              cc: Array.isArray(env.cc) ? env.cc.map((a) => `${a.name ?? ''} <${a.address ?? ''}>`.trim()).join(', ') : (parsed?.cc?.text ?? ''),
+              cc_addresses: Array.isArray(env.cc) ? env.cc.map((a) => a.address).filter(Boolean) : (parsed?.cc?.value?.map((a) => a.address).filter(Boolean) ?? []),
               size: m.size ?? 0,
               text,
               html,
+              attachments,
             };
           } finally {
             lock.release();
@@ -2341,6 +2327,117 @@ app.all('/api/bureau/mailbox.php', async (req, res) => {
     return res.status(500).json({ error: String(e?.message || e) });
   }
 });
+
+/**
+ * Construit le raw RFC822 via MailComposer (nodemailer interne) pour pouvoir le
+ * réutiliser dans IMAP APPEND vers le dossier Envoyés.
+ */
+async function buildRawMessage(mail) {
+  if (!nodemailer) throw new Error('nodemailer absent');
+  const MailComposer = require('nodemailer/lib/mail-composer');
+  const composer = new MailComposer(mail);
+  return await new Promise((resolve, reject) => {
+    composer.compile().build((err, message) => {
+      if (err) reject(err);
+      else resolve(message);
+    });
+  });
+}
+
+/**
+ * Envoie un email via SMTP avec stratégie résiliente :
+ *   • essaie d'abord la config du compte (port/secure tels quels)
+ *   • si échec timeout/auth/connect : tente le port alternatif (465 ↔ 587)
+ * Renvoie { ok, error?, raw?, messageId?, accepted?, rejected?, attempted: [...] }
+ */
+async function sendViaSmtpResilient(account, mail) {
+  const baseHost = account.smtp_host || account.imap_host;
+  const declaredPort = account.smtp_port ?? 465;
+  const declaredSecure = account.smtp_secure ?? true;
+  const attempts = [];
+
+  // Pré-construit le RFC822 (utile pour Sent folder même si SMTP échoue à un essai).
+  const messageId = `<${crypto.randomBytes(12).toString('hex')}@${(account.email.split('@')[1] || 'local')}>`;
+  const composed = {
+    from: { name: account.label || account.email, address: account.email },
+    to: mail.to,
+    cc: mail.cc?.length ? mail.cc : undefined,
+    bcc: mail.bcc?.length ? mail.bcc : undefined,
+    subject: mail.subject,
+    text: mail.text,
+    html: mail.html,
+    inReplyTo: mail.inReplyTo,
+    references: mail.inReplyTo ? [mail.inReplyTo] : undefined,
+    messageId,
+  };
+  let raw = null;
+  try { raw = await buildRawMessage(composed); } catch { /* fallback : sendMail composera lui-même */ }
+
+  const tries = [{ port: declaredPort, secure: declaredSecure }];
+  const altPort = declaredPort === 465 ? 587 : (declaredPort === 587 ? 465 : null);
+  if (altPort) tries.push({ port: altPort, secure: altPort === 465 });
+
+  let lastErr = null;
+  for (const t of tries) {
+    const transporter = nodemailer.createTransport({
+      host: baseHost,
+      port: t.port,
+      secure: t.secure,                          // true=SSL (465), false=STARTTLS (587)
+      requireTLS: !t.secure,                     // force STARTTLS sur 587
+      auth: { user: account.email, pass: decryptSecret(account.password_enc) },
+      connectionTimeout: 12000,                  // TCP connect (12s)
+      greetingTimeout: 8000,                     // attente du 220 (8s)
+      socketTimeout: 18000,                      // inactivité (18s) — total worst-case ≈ 38s avec fallback
+      tls: { rejectUnauthorized: false },        // tolère certificats non-strictly-signed (LWS partagé)
+    });
+
+    try {
+      const info = await transporter.sendMail(composed);
+      try { transporter.close(); } catch { /* ignore */ }
+      attempts.push({ ...t, ok: true });
+      return {
+        ok: true,
+        messageId: info.messageId || messageId,
+        accepted: info.accepted ?? [],
+        rejected: info.rejected ?? [],
+        raw: info.message || raw, // info.message présent uniquement si streamTransport ; sinon notre raw
+        attempted: attempts,
+      };
+    } catch (e) {
+      lastErr = e;
+      attempts.push({ ...t, ok: false, error: String(e?.message || e).slice(0, 200) });
+      try { transporter.close(); } catch { /* ignore */ }
+      const m = String(e?.message || '').toLowerCase();
+      const retriable = /timeout|econnrefused|enetunreach|ehostunreach|epipe|esock|tls|ssl|starttls|auth|invalid login|535|421|454/i.test(m);
+      if (!retriable) break;
+    }
+  }
+  return {
+    ok: false,
+    error: String(lastErr?.message || lastErr || 'Échec inconnu'),
+    attempted: attempts,
+  };
+}
+
+/** Best-effort copie du raw RFC822 dans le dossier Envoyés. Silencieux si absent / non supporté. */
+async function appendToSentFolderInBackground(account, raw) {
+  if (!raw || !ImapFlow) return;
+  try {
+    await withImapClient(account, async (client) => {
+      const candidates = ['Sent', 'INBOX.Sent', 'Sent Items', 'Sent Messages', 'Envoy\u00e9s', 'INBOX.Envoy\u00e9s', 'INBOX.Sent Items'];
+      for (const name of candidates) {
+        try {
+          const opened = await client.mailboxOpen(name).catch(() => null);
+          if (opened) {
+            await client.append(name, raw, ['\\Seen']).catch(() => {});
+            await client.mailboxClose().catch(() => {});
+            return;
+          }
+        } catch { /* try next */ }
+      }
+    }, { timeoutMs: 12000 });
+  } catch { /* silencieux */ }
+}
 
 /**
  * Normalise une liste de destinataires : accepte tableau ou CSV/saut-de-ligne, valide format email basique.
