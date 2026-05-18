@@ -166,6 +166,45 @@ app.get('/api/bureau/health', async (_req, res) => {
   }
 });
 
+/**
+ * Diagnostic complet du schéma : signale quels addons SQL sont à exécuter.
+ * Aucune authentification requise (mais aucune donnée sensible exposée, juste des présence/absence).
+ * À utiliser depuis l'UI de paramètres système ou en debug.
+ */
+app.get('/api/bureau/schema-check', async (_req, res) => {
+  const expected = [
+    { table: 'users',                addon: 'sql/supabase-setup.sql',           module: 'Authentification (CORE)' },
+    { table: 'projects',             addon: 'sql/supabase-setup.sql',           module: 'Projets (CORE)' },
+    { table: 'clients',              addon: 'sql/supabase-setup.sql',           module: 'Clients (CORE)' },
+    { table: 'mailbox_accounts',     addon: 'sql/supabase_perms_mailbox_addon.sql', module: 'Boîte mail LWS' },
+    { table: 'job_offers',           addon: 'sql/supabase_blog_jobs_addon.sql', module: 'Offres d\'emploi + Blog' },
+    { table: 'job_applications',     addon: 'sql/supabase_inbox_addon.sql',     module: 'Candidatures (Inbox)' },
+    { table: 'case_milestones',      addon: 'sql/supabase_cases_addon.sql',     module: 'Dossiers — étapes / documents' },
+    { table: 'case_events',          addon: 'sql/supabase_cases_addon.sql',     module: 'Calendrier' },
+    { table: 'case_documents',       addon: 'sql/supabase_cases_addon.sql',     module: 'Dossiers — documents' },
+    { table: 'case_clients',         addon: 'sql/supabase_cases_addon.sql',     module: 'Dossiers — clients liés' },
+    { table: 'case_invoices',        addon: 'sql/supabase_phase2_addon.sql',    module: 'Tableau financier — factures' },
+    { table: 'case_payments',        addon: 'sql/supabase_phase2_addon.sql',    module: 'Tableau financier — paiements' },
+    { table: 'case_event_requests',  addon: 'sql/supabase_phase2_addon.sql',    module: 'Demandes RDV client' },
+    { table: 'case_activities',      addon: 'sql/supabase_phase2_addon.sql',    module: 'Diligences (time-tracking)' },
+    { table: 'case_signatures',      addon: 'sql/supabase_phase3_addon.sql',    module: 'Signatures électroniques' },
+    { table: 'case_templates',       addon: 'sql/supabase_phase3_addon.sql',    module: 'Modèles de dossier' },
+  ];
+  const checks = await Promise.all(expected.map(async (e) => {
+    const { error } = await supabase.from(e.table).select('*', { count: 'exact', head: true });
+    return { ...e, present: !error };
+  }));
+  const missing_addons = Array.from(new Set(checks.filter((c) => !c.present).map((c) => c.addon)));
+  return res.json({
+    ok: missing_addons.length === 0,
+    checks,
+    missing_addons,
+    message: missing_addons.length === 0
+      ? 'Toutes les tables sont présentes. Schéma à jour.'
+      : `Schéma incomplet. Exécutez les scripts SQL suivants dans Supabase SQL Editor : ${missing_addons.join(', ')}.`,
+  });
+});
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const makeToken  = () => crypto.randomBytes(32).toString('hex');
 const in8h       = () => new Date(Date.now() + 8  * 3600_000).toISOString();
@@ -1493,83 +1532,172 @@ app.all('/api/bureau/cases.php', async (req, res) => {
     // ── TEMPLATES de dossier ─────────────────────────────────────────────────
     if (action === 'templates_list' && req.method === 'GET') {
       const { data, error } = await supabase.from('case_templates').select('*').eq('is_active', true).order('name');
-      if (error) return res.status(500).json({ error: error.message });
+      if (error) {
+        const missing = /(relation .* does not exist|Could not find the table|schema cache)/i.test(error.message || '');
+        return res.status(missing ? 503 : 500).json({
+          error: missing
+            ? "Table 'case_templates' absente. Exécutez sql/supabase_phase3_addon.sql dans Supabase SQL Editor."
+            : error.message,
+          missing_table: missing ? 'case_templates' : undefined,
+        });
+      }
       return res.json(data ?? []);
     }
     if (action === 'template_apply' && req.method === 'POST') {
-      // Crée un projet from template + génère ses milestones
+      // Crée un projet from template + génère ses milestones (mode robuste : 2 INSERT en cas
+      // de colonnes manquantes — supporte schéma de base sans supabase_cases_addon.sql)
       if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
       const templateId = +id;
       const b = req.body || {};
-      const { data: tpl } = await supabase.from('case_templates').select('*').eq('id', templateId).maybeSingle();
+      const { data: tpl, error: tplErr } = await supabase
+        .from('case_templates').select('*').eq('id', templateId).maybeSingle();
+      if (tplErr) {
+        const missing = /(relation .* does not exist|Could not find the table|schema cache)/i.test(tplErr.message || '');
+        return res.status(missing ? 503 : 500).json({
+          error: missing
+            ? "Table 'case_templates' absente. Exécutez sql/supabase_phase3_addon.sql."
+            : tplErr.message,
+        });
+      }
       if (!tpl) return res.status(404).json({ error: 'Modèle introuvable' });
-      // Création projet
-      const { data: project, error: pErr } = await supabase.from('projects').insert({
-        name: String(b.name || tpl.name).slice(0, 240),
-        client: String(b.client || '').slice(0, 240) || 'À renseigner',
+
+      // ── 1) INSERT minimal (colonnes garanties par le schéma de base)
+      const baseProject = {
+        name:        String(b.name || tpl.name).slice(0, 240),
+        client:      String(b.client || '').trim().slice(0, 240) || 'À renseigner',
         description: b.description || tpl.description || null,
-        status: tpl.default_status || 'en_cours',
-        priority: tpl.default_priority || 'normale',
-        practice_area: tpl.practice_area || null,
-        case_number: b.case_number ? String(b.case_number).slice(0, 80) : null,
-        created_by: u.id,
-      }).select().single();
-      if (pErr) return res.status(500).json({ error: pErr.message });
-      // Génération milestones
-      const baseDate = new Date(b.start_date || new Date());
-      const ms = (tpl.milestones_json || []).map((m) => {
-        const due = new Date(baseDate);
-        due.setDate(due.getDate() + (Number(m.due_offset_days) || 0));
-        return {
-          project_id: project.id,
-          title: m.title, description: m.description || null,
-          due_date: due.toISOString().slice(0, 10),
-          order_index: Number(m.order_index) || 0,
-          visible_to_client: m.visible_to_client !== false,
-          status: 'a_faire',
-          created_by: u.id,
-        };
+        status:      tpl.default_status   || 'en_cours',
+        priority:    tpl.default_priority || 'normale',
+        created_by:  u.id,
+      };
+      const { data: project, error: pErr } = await supabase
+        .from('projects').insert(baseProject).select().single();
+      if (pErr) {
+        console.error('template_apply projects.insert error:', pErr.message);
+        return res.status(500).json({
+          error: `Création du dossier impossible : ${pErr.message}`,
+          hint: 'Vérifiez la table projects et les contraintes (name, client requis).',
+        });
+      }
+
+      // ── 2) UPDATE optionnel pour colonnes addon (silencieux si absentes)
+      const optional = {};
+      if (tpl.practice_area) optional.practice_area = tpl.practice_area;
+      if (b.case_number)     optional.case_number   = String(b.case_number).slice(0, 80);
+      if (Object.keys(optional).length > 0) {
+        const { error: oErr } = await supabase.from('projects').update(optional).eq('id', project.id);
+        if (oErr && !/column .* does not exist|schema cache/i.test(oErr.message || '')) {
+          console.warn('template_apply update meta non bloquant:', oErr.message);
+        }
+      }
+
+      // ── 3) Génération milestones (idempotent : on continue même si la table addon manque)
+      const baseDate = new Date(b.start_date || Date.now());
+      let milestonesCount = 0, milestonesWarning = null;
+      const ms = (tpl.milestones_json || [])
+        .filter((m) => m && m.title && String(m.title).trim())
+        .map((m, i) => {
+          const due = new Date(baseDate);
+          due.setDate(due.getDate() + (Number(m.due_offset_days) || 0));
+          return {
+            project_id: project.id,
+            title:       String(m.title).slice(0, 240),
+            description: m.description ? String(m.description).slice(0, 4000) : null,
+            due_date:    due.toISOString().slice(0, 10),
+            order_index: Number(m.order_index) || (i + 1) * 10,
+            visible_to_client: m.visible_to_client !== false,
+            status:      'a_faire',
+            created_by:  u.id,
+          };
+        });
+      if (ms.length) {
+        const { error: msErr } = await supabase.from('case_milestones').insert(ms);
+        if (msErr) {
+          milestonesWarning = msErr.message;
+          console.warn('template_apply case_milestones non créées:', msErr.message);
+        } else {
+          milestonesCount = ms.length;
+        }
+      }
+
+      // ── 4) Génération events (idem)
+      let eventsCount = 0, eventsWarning = null;
+      const evs = (tpl.events_json || [])
+        .filter((e) => e && e.title)
+        .map((e) => {
+          const sched = new Date(baseDate);
+          sched.setDate(sched.getDate() + (Number(e.scheduled_offset_days) || 0));
+          return {
+            project_id: project.id,
+            type:       ['audience','rdv','echeance','depot_pieces','consultation','autre'].includes(e.type) ? e.type : 'rdv',
+            title:      String(e.title).slice(0, 240),
+            location:   e.location || null,
+            scheduled_at: sched.toISOString(),
+            duration_minutes: Number(e.duration_minutes) || 60,
+            visible_to_client: e.visible_to_client !== false,
+            created_by: u.id,
+          };
+        });
+      if (evs.length) {
+        const { error: evErr } = await supabase.from('case_events').insert(evs);
+        if (evErr) {
+          eventsWarning = evErr.message;
+          console.warn('template_apply case_events non créés:', evErr.message);
+        } else {
+          eventsCount = evs.length;
+        }
+      }
+
+      return res.json({
+        success: true,
+        project,
+        milestones_count: milestonesCount,
+        events_count: eventsCount,
+        warnings: (milestonesWarning || eventsWarning) ? {
+          milestones: milestonesWarning,
+          events: eventsWarning,
+          hint: "Exécutez sql/supabase_cases_addon.sql pour activer les étapes / événements de dossier.",
+        } : undefined,
       });
-      if (ms.length) await supabase.from('case_milestones').insert(ms);
-      // Génération events
-      const evs = (tpl.events_json || []).map((e) => {
-        const sched = new Date(baseDate);
-        sched.setDate(sched.getDate() + (Number(e.scheduled_offset_days) || 0));
-        return {
-          project_id: project.id,
-          type: e.type || 'rdv', title: e.title, location: e.location || null,
-          scheduled_at: sched.toISOString(),
-          duration_minutes: Number(e.duration_minutes) || 60,
-          visible_to_client: e.visible_to_client !== false,
-          created_by: u.id,
-        };
-      });
-      if (evs.length) await supabase.from('case_events').insert(evs);
-      return res.json({ success: true, project, milestones_count: ms.length, events_count: evs.length });
     }
     if (action === 'template_create' && req.method === 'POST') {
       if (!isSuperAdmin) return res.status(403).json({ error: 'Réservé au super administrateur.' });
       const b = req.body || {};
       const payload = {
-        name: String(b.name || '').slice(0, 240),
+        name: String(b.name || '').trim().slice(0, 240),
         description: b.description ? String(b.description).slice(0, 4000) : null,
         practice_area: b.practice_area || null,
         default_status: b.default_status || 'en_cours',
         default_priority: b.default_priority || 'normale',
-        milestones_json: b.milestones_json || [],
-        events_json: b.events_json || [],
+        milestones_json: Array.isArray(b.milestones_json) ? b.milestones_json : [],
+        events_json: Array.isArray(b.events_json) ? b.events_json : [],
         is_active: b.is_active !== false,
         created_by: u.id,
       };
-      if (!payload.name) return res.status(400).json({ error: 'Nom requis' });
+      if (!payload.name) return res.status(400).json({ error: 'Le nom du modèle est obligatoire.' });
       const { data, error } = await supabase.from('case_templates').insert(payload).select().single();
-      if (error) return res.status(500).json({ error: error.message });
+      if (error) {
+        const missing = /(relation .* does not exist|Could not find the table|schema cache)/i.test(error.message || '');
+        return res.status(missing ? 503 : 500).json({
+          error: missing
+            ? "Table 'case_templates' absente. Exécutez sql/supabase_phase3_addon.sql dans Supabase SQL Editor."
+            : error.message,
+        });
+      }
       return res.json({ success: true, template: data });
     }
     if (action === 'template_update' && req.method === 'PUT') {
       if (!isSuperAdmin) return res.status(403).json({ error: 'Réservé au super administrateur.' });
       const tplId = +id;
-      const { error } = await supabase.from('case_templates').update(req.body || {}).eq('id', tplId);
+      const b = req.body || {};
+      // Sanitise : ne garde que les colonnes connues + force le typage des JSON
+      const allowed = ['name','description','practice_area','default_status','default_priority','milestones_json','events_json','is_active'];
+      const payload = {};
+      for (const k of allowed) if (k in b) payload[k] = b[k];
+      if (payload.milestones_json && !Array.isArray(payload.milestones_json)) payload.milestones_json = [];
+      if (payload.events_json && !Array.isArray(payload.events_json)) payload.events_json = [];
+      if (Object.keys(payload).length === 0) return res.status(400).json({ error: 'Aucune modification fournie.' });
+      const { error } = await supabase.from('case_templates').update(payload).eq('id', tplId);
       if (error) return res.status(500).json({ error: error.message });
       return res.json({ success: true });
     }
@@ -3764,21 +3892,41 @@ app.get('/api/bureau/calendar.php', async (req, res) => {
       return res.status(403).json({ error: 'Permission requise' });
     }
     const from = req.query.from ? String(req.query.from) : new Date(Date.now() - 30 * 86400e3).toISOString().slice(0, 10);
-    const to = req.query.to ? String(req.query.to) : new Date(Date.now() + 60 * 86400e3).toISOString().slice(0, 10);
-    const { data: events, error } = await supabase
+    const to   = req.query.to   ? String(req.query.to)   : new Date(Date.now() + 60 * 86400e3).toISOString().slice(0, 10);
+    // Essai 1 : requête complète avec join projets (suppose addon SQL appliqué)
+    let { data: events, error } = await supabase
       .from('case_events')
       .select('id, project_id, type, title, scheduled_at, duration_minutes, location, visible_to_client, status, project:projects!project_id(id, name, case_number, status, priority)')
       .gte('scheduled_at', from + 'T00:00:00')
       .lte('scheduled_at', to + 'T23:59:59')
       .order('scheduled_at');
-    if (error) return res.status(500).json({ error: error.message });
+    // Fallback : pas de colonne case_number → on retire le join enrichi
+    if (error && /case_number|does not exist|schema cache/i.test(error.message || '')) {
+      const fb = await supabase
+        .from('case_events')
+        .select('id, project_id, type, title, scheduled_at, duration_minutes, location, visible_to_client, status, project:projects!project_id(id, name, status, priority)')
+        .gte('scheduled_at', from + 'T00:00:00')
+        .lte('scheduled_at', to + 'T23:59:59')
+        .order('scheduled_at');
+      events = fb.data; error = fb.error;
+    }
+    if (error) {
+      const missing = /(relation .* does not exist|Could not find the table|schema cache)/i.test(error.message || '');
+      return res.status(missing ? 200 : 500).json({
+        from, to, events: [],
+        warning: missing
+          ? "Table 'case_events' absente. Exécutez sql/supabase_cases_addon.sql pour activer le calendrier."
+          : error.message,
+      });
+    }
     return res.json({
       from, to,
       events: (events ?? []).map((e) => ({
         id: e.id, project_id: e.project_id, type: e.type, title: e.title,
         scheduled_at: e.scheduled_at, duration_minutes: e.duration_minutes,
         location: e.location, status: e.status, visible_to_client: e.visible_to_client,
-        case_name: e.project?.name ?? null, case_number: e.project?.case_number ?? null,
+        case_name: e.project?.name ?? null,
+        case_number: e.project?.case_number ?? null,
         case_priority: e.project?.priority ?? null,
       })),
     });
@@ -3802,10 +3950,28 @@ app.get('/api/bureau/finance.php', async (req, res) => {
     const m2Start = (() => { const d = new Date(monthStart); d.setMonth(d.getMonth() - 2); return d.toISOString().slice(0, 10); })();
     const m3Start = (() => { const d = new Date(monthStart); d.setMonth(d.getMonth() - 3); return d.toISOString().slice(0, 10); })();
 
-    const [{ data: invoices }, { data: payments }] = await Promise.all([
-      supabase.from('case_invoices').select('id, project_id, invoice_number, title, amount, paid_amount, currency, status, due_date, sent_at, created_at, project:projects!project_id(name, case_number)').order('created_at', { ascending: false }),
-      supabase.from('case_payments').select('id, invoice_id, amount, paid_at').order('paid_at', { ascending: false }),
-    ]);
+    let invoicesRes = await supabase.from('case_invoices')
+      .select('id, project_id, invoice_number, title, amount, paid_amount, currency, status, due_date, sent_at, created_at, project:projects!project_id(name, case_number)')
+      .order('created_at', { ascending: false });
+    if (invoicesRes.error && /case_number|does not exist|schema cache/i.test(invoicesRes.error.message || '')) {
+      invoicesRes = await supabase.from('case_invoices')
+        .select('id, project_id, invoice_number, title, amount, paid_amount, currency, status, due_date, sent_at, created_at, project:projects!project_id(name)')
+        .order('created_at', { ascending: false });
+    }
+    if (invoicesRes.error) {
+      const missing = /(relation .* does not exist|Could not find the table|schema cache)/i.test(invoicesRes.error.message || '');
+      if (missing) {
+        return res.json({
+          kpis: { total_invoiced: 0, total_collected: 0, total_outstanding: 0, overdue_count: 0, overdue_amount: 0 },
+          overdue: [], trend: [], top_to_collect: [], forecast: [],
+          warning: "Tables 'case_invoices' / 'case_payments' absentes. Exécutez sql/supabase_phase2_addon.sql pour activer le tableau financier.",
+        });
+      }
+      return res.status(500).json({ error: invoicesRes.error.message });
+    }
+    const paymentsRes = await supabase.from('case_payments').select('id, invoice_id, amount, paid_at').order('paid_at', { ascending: false });
+    const invoices = invoicesRes.data;
+    const payments = paymentsRes.error ? [] : paymentsRes.data;
 
     const isOverdue = (inv) => inv.due_date && inv.due_date < today && inv.status !== 'payee' && inv.status !== 'annulee';
     const overdueList = (invoices ?? []).filter(isOverdue).map((i) => ({

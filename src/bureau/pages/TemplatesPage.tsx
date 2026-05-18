@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { casesApi, type CaseTemplate } from "../api";
 import { useAuth } from "../BureauContext";
 
 export function TemplatesPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isSuperAdmin = user?.role === "super_admin";
   const [templates, setTemplates] = useState<CaseTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,6 +23,13 @@ export function TemplatesPage() {
       .finally(() => setLoading(false));
   }
   useEffect(() => { load(); }, []);
+
+  function handleApplied(msg: string) {
+    setApplying(null);
+    notify(msg);
+    // Navigation auto vers Projets pour voir le nouveau dossier
+    setTimeout(() => navigate("/bureau/projets"), 900);
+  }
 
   function notify(msg: string) {
     setToast(msg);
@@ -104,7 +113,7 @@ export function TemplatesPage() {
         )}
       </div>
 
-      {applying && <ApplyModal tpl={applying} onClose={() => setApplying(null)} onSuccess={() => { setApplying(null); notify("Dossier créé !"); }} />}
+      {applying && <ApplyModal tpl={applying} onClose={() => setApplying(null)} onSuccess={handleApplied} />}
       {(showCreate || editing) && (
         <TemplateEditModal
           tpl={editing}
@@ -116,7 +125,7 @@ export function TemplatesPage() {
   );
 }
 
-function ApplyModal({ tpl, onClose, onSuccess }: { tpl: CaseTemplate; onClose: () => void; onSuccess: () => void }) {
+function ApplyModal({ tpl, onClose, onSuccess }: { tpl: CaseTemplate; onClose: () => void; onSuccess: (msg: string) => void }) {
   const [form, setForm] = useState({
     name: tpl.name,
     client: "",
@@ -132,8 +141,9 @@ function ApplyModal({ tpl, onClose, onSuccess }: { tpl: CaseTemplate; onClose: (
     if (!form.name.trim() || !form.client.trim()) { setErr("Nom du dossier et client requis."); return; }
     setSaving(true); setErr(null);
     try {
-      await casesApi.templateApply(tpl.id, form);
-      onSuccess();
+      const r = await casesApi.templateApply(tpl.id, form);
+      const warn = r.warnings ? ` (Attention : ${r.warnings.hint ?? ""})` : "";
+      onSuccess(`✓ Dossier créé : ${r.milestones_count} étape(s), ${r.events_count} évènement(s).${warn}`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally { setSaving(false); }
@@ -177,9 +187,19 @@ function TemplateEditModal({ tpl, onClose, onSuccess }: { tpl: CaseTemplate | nu
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!form.name?.trim()) { setErr("Nom requis."); return; }
+    if (!form.name?.trim()) { setErr("Le nom du modèle est requis."); return; }
+    const validMs = milestones.filter((m) => m.title?.trim());
+    if (validMs.length === 0) { setErr("Ajoutez au moins une étape avec un titre."); return; }
     setSaving(true); setErr(null);
-    const payload = { ...form, milestones_json: milestones.filter((m) => m.title?.trim()) };
+    // Normalise les étapes : titre obligatoire, due_offset_days et order_index typés
+    const cleanMs = validMs.map((m, i) => ({
+      title: String(m.title).trim(),
+      description: m.description ? String(m.description).trim() : undefined,
+      due_offset_days: Number(m.due_offset_days) || 0,
+      order_index: Number(m.order_index) || (i + 1) * 10,
+      visible_to_client: m.visible_to_client !== false,
+    }));
+    const payload = { ...form, milestones_json: cleanMs };
     try {
       if (tpl) await casesApi.templateUpdate(tpl.id, payload);
       else await casesApi.templateCreate(payload);

@@ -188,7 +188,13 @@ export const casesApi = {
   // Templates de dossier
   templatesList:    () => request<CaseTemplate[]>('cases.php', 'GET', undefined, { action: 'templates_list', id: '0' }),
   templateApply:    (templateId: number, data: { name?: string; client?: string; description?: string; case_number?: string; start_date?: string }) =>
-    request<{ success: boolean; project: Project; milestones_count: number; events_count: number }>('cases.php', 'POST', data, { action: 'template_apply', id: String(templateId) }),
+    request<{
+      success: boolean;
+      project: Project;
+      milestones_count: number;
+      events_count: number;
+      warnings?: { milestones?: string | null; events?: string | null; hint?: string };
+    }>('cases.php', 'POST', data, { action: 'template_apply', id: String(templateId) }),
   templateCreate:   (data: Partial<CaseTemplate>) => request<{ success: boolean; template: CaseTemplate }>('cases.php', 'POST', data, { action: 'template_create', id: '0' }),
   templateUpdate:   (id: number, data: Partial<CaseTemplate>) => request('cases.php', 'PUT', data, { action: 'template_update', id: String(id) }),
   templateDelete:   (id: number) => request('cases.php', 'DELETE', undefined, { action: 'template_delete', id: String(id) }),
