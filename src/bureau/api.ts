@@ -944,6 +944,17 @@ export const mailboxApi = {
       results: Array<{ port: number; secure: boolean; ok: boolean; ms: number; error?: string }>;
       recommendation: string;
     }>('mailbox.php', 'POST', undefined, { action: 'test_smtp', id: String(id) }),
+  /** Supprime un message : déplacé vers Corbeille si possible, sinon expunge définitif. */
+  deleteMessage: (id: number, uid: number, opts?: { folder?: string; permanent?: boolean }) =>
+    request<{ success: boolean; action: 'moved_to_trash' | 'expunged'; trash?: string }>(
+      'mailbox.php', 'POST', undefined, {
+        action: 'delete_message',
+        id: String(id),
+        uid: String(uid),
+        ...(opts?.folder ? { folder: opts.folder } : {}),
+        ...(opts?.permanent ? { permanent: 'true' } : {}),
+      },
+    ),
   /** Télécharge une pièce jointe (auth via header → blob URL → ouvre nouvel onglet). */
   openAttachment: async (
     accountId: number,

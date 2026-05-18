@@ -3458,6 +3458,56 @@ app.all('/api/bureau/mailbox.php', async (req, res) => {
       }
     }
 
+    if (action === 'delete_message' && (req.method === 'POST' || req.method === 'DELETE')) {
+      const accountId = +id;
+      const uid = parseInt(String(req.query.uid ?? ''), 10);
+      const folder = (req.query.folder && String(req.query.folder).trim()) || 'INBOX';
+      const permanent = String(req.query.permanent ?? '').toLowerCase() === 'true';
+      if (!Number.isFinite(uid)) return res.status(400).json({ error: 'uid requis' });
+      const account = await loadMailboxAccount(accountId, true);
+      if (!account) return res.status(404).json({ error: 'Compte introuvable' });
+      try {
+        const result = await withImapClient(account, async (client) => {
+          const lock = await client.getMailboxLock(folder);
+          try {
+            // Recherche du dossier Corbeille (Trash) parmi les boîtes du compte
+            let trashPath = null;
+            if (!permanent) {
+              try {
+                const list = await client.list();
+                const candidates = ['\\Trash', '\\Junk'];
+                const found = list.find((b) =>
+                  (Array.isArray(b.specialUse) ? b.specialUse.some((s) => candidates.includes(s)) : candidates.includes(b.specialUse))
+                  || /^(trash|corbeille|deleted|deleted\s*items?)$/i.test(b.path)
+                  || /^(trash|corbeille|deleted|deleted\s*items?)$/i.test(b.name),
+                );
+                if (found) trashPath = found.path;
+              } catch { /* ignore */ }
+            }
+
+            if (trashPath && trashPath !== folder) {
+              // Déplacement vers la corbeille (préférable, réversible)
+              try {
+                const moved = await client.messageMove(String(uid), trashPath, { uid: true });
+                return { success: true, action: 'moved_to_trash', trash: trashPath, moved };
+              } catch (moveErr) {
+                console.warn('messageMove fallback to flag+expunge:', moveErr?.message);
+              }
+            }
+            // Fallback : flag \Deleted + expunge (suppression définitive)
+            await client.messageFlagsAdd(String(uid), ['\\Deleted'], { uid: true });
+            try { await client.messageDelete(String(uid), { uid: true }); } catch { /* expunge */ }
+            return { success: true, action: 'expunged' };
+          } finally {
+            lock.release();
+          }
+        }, { timeoutMs: 30000 });
+        return res.json(result);
+      } catch (e) {
+        return res.status(502).json({ error: String(e?.message || e) });
+      }
+    }
+
     return res.status(404).json({ error: 'Action non trouvée' });
   } catch (e) {
     console.error('mailbox.php', e);

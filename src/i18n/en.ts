@@ -15,7 +15,7 @@ const en: Translations = {
     recrutement:   "HR & placements",
     cta:           "Get in touch",
     portailClient: "Client portal",
-    portailAgent:  "Agent portal",
+    portailAgent:  "Administration",
     portailAgentBadge: "Private",
   },
 

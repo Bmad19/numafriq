@@ -100,6 +100,7 @@ export function MailboxPage() {
   const [onlyUnread, setOnlyUnread] = useState(false);
   const [onlyAttachments, setOnlyAttachments] = useState(false);
   const [period, setPeriod] = useState<"all" | "today" | "7d" | "30d">("all");
+  const [deletingUid, setDeletingUid] = useState<number | null>(null);
 
   function loadAccounts() {
     setLoadingAccounts(true);
@@ -249,6 +250,29 @@ export function MailboxPage() {
     } finally {
       setTestingSmtp(false);
     }
+  }
+
+  async function deleteMessageByUid(uid: number, opts?: { skipConfirm?: boolean }) {
+    if (activeId == null) return;
+    if (!opts?.skipConfirm && !confirm("Supprimer ce message ?\nIl sera placé dans la Corbeille du serveur LWS (récupérable depuis Roundcube).")) return;
+    setDeletingUid(uid);
+    try {
+      await mailboxApi.deleteMessage(activeId, uid);
+      // Mise à jour optimiste de la liste locale
+      setInbox((prev) => prev ? { ...prev, total: Math.max(0, prev.total - 1), messages: prev.messages.filter((m) => m.uid !== uid) } : prev);
+      if (selectedUid === uid) {
+        setSelectedUid(null);
+        setOpenMessage(null);
+        setFullScreen(false);
+      }
+    } catch (e: unknown) {
+      alert(`Suppression impossible : ${e instanceof Error ? e.message : "erreur"}`);
+    } finally {
+      setDeletingUid(null);
+    }
+  }
+  function deleteCurrentMessage() {
+    if (openMessage) deleteMessageByUid(openMessage.uid);
   }
 
   async function downloadAttachment(idx: number) {
@@ -510,10 +534,10 @@ export function MailboxPage() {
                 ) : (
                   <ul className="divide-y divide-white/[0.04]">
                     {filteredMessages.map((m) => (
-                      <li key={m.uid}>
+                      <li key={m.uid} className="group relative">
                         <button
                           onClick={() => setSelectedUid(m.uid)}
-                          className={`w-full text-left px-3 py-2 transition hover:bg-white/[0.03] ${
+                          className={`w-full text-left px-3 py-2 pr-9 transition hover:bg-white/[0.03] ${
                             m.uid === selectedUid ? "bg-coral/[0.07]" : ""
                           }`}
                         >
@@ -532,6 +556,16 @@ export function MailboxPage() {
                               </p>
                             </div>
                           </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); deleteMessageByUid(m.uid); }}
+                          disabled={deletingUid === m.uid}
+                          className="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-1 text-coral/0 group-hover:text-coral/80 hover:bg-coral/15 hover:text-coral transition disabled:opacity-50"
+                          title="Supprimer ce message"
+                          aria-label="Supprimer ce message"
+                        >
+                          {deletingUid === m.uid ? "…" : "🗑"}
                         </button>
                       </li>
                     ))}
@@ -584,6 +618,12 @@ export function MailboxPage() {
                           className="rounded-lg border border-white/15 bg-white/[0.03] px-3 py-1.5 text-xs font-bold text-white/75 hover:bg-white/[0.07] transition"
                           title={fullScreen ? "Réafficher la liste" : "Mode plein écran (lecture confortable)"}
                         >{fullScreen ? "⤡ Réduire" : "⤢ Plein écran"}</button>
+                        <button
+                          onClick={() => deleteCurrentMessage()}
+                          disabled={deletingUid === openMessage.uid}
+                          className="rounded-lg border border-coral/30 bg-coral/10 px-3 py-1.5 text-xs font-bold text-coral hover:bg-coral/20 transition disabled:opacity-50"
+                          title="Supprimer ce message (placé en Corbeille si possible)"
+                        >{deletingUid === openMessage.uid ? "…" : "🗑 Supprimer"}</button>
                       </div>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-[80px_1fr] gap-y-1.5 gap-x-3 text-xs">

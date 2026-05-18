@@ -15,6 +15,7 @@ type NavEntry = {
 };
 
 const NAV: NavEntry[] = [
+  { to: "/bureau/mailbox",       label: "Boîte mail LWS",  icon: <MailIcon />,    min: "super_admin", perm: "mailbox" },
   { to: "/bureau/overview",      label: "Vue d'ensemble",  icon: <GridIcon />,    min: "agent" },
   { to: "/bureau/inbox",         label: "Boîte de réception", icon: <InboxStackIcon />, min: "agent", perm: "leads",      badge: "inbox" },
   { to: "/bureau/assistant",     label: "Assistant",       icon: <SparkIcon />,   min: "agent",       perm: "assistant" },
@@ -30,7 +31,6 @@ const NAV: NavEntry[] = [
   { to: "/bureau/retours",       label: "Retours clients", icon: <StarIcon />,    min: "admin",       perm: "feedback" },
   { to: "/bureau/offres-emploi", label: "Offres d'emploi", icon: <BriefcaseIcon />, min: "admin",     perm: "job_offers" },
   { to: "/bureau/blog",          label: "Blog",            icon: <PencilIcon />,  min: "admin",       perm: "blog" },
-  { to: "/bureau/mailbox",       label: "Boîte mail LWS",  icon: <MailIcon />,    min: "super_admin", perm: "mailbox" },
   { to: "/bureau/equipe",        label: "Équipe",          icon: <ShieldIcon />,  min: "super_admin" },
 ];
 

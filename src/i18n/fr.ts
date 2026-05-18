@@ -15,7 +15,7 @@ const fr = {
     recrutement:   "Recrutements",
     cta:           "Prendre contact",
     portailClient: "Espace Client",
-    portailAgent:  "Espace Agent",
+    portailAgent:  "Administration",
     portailAgentBadge: "Privé",
   },
 

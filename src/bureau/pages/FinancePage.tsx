@@ -80,7 +80,7 @@ export function FinancePage() {
           </div>
 
           <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <h2 className="font-semibold text-white mb-3">Top dossiers à recouvrir</h2>
+            <h2 className="font-semibold text-white mb-3">Top dossiers à recouvrer</h2>
             {data.top_to_collect.length === 0 ? (
               <p className="text-sm text-white/55 italic">Aucun retard à signaler.</p>
             ) : (
