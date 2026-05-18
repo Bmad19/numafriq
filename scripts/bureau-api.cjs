@@ -227,11 +227,21 @@ async function authGuard(req, res, minRole = 'agent') {
   const m = (req.headers.authorization ?? '').match(/^Bearer\s+(.+)$/i);
   if (!m) { res.status(401).json({ error: 'Non authentifié' }); return null; }
 
-  const { data: sess, error: sessErr } = await supabase
+  // Essai 1 : avec la colonne `permissions` (addon supabase_perms_mailbox_addon.sql appliqué)
+  let { data: sess, error: sessErr } = await supabase
     .from('sessions')
     .select('expires_at, user:users!user_id(id,username,full_name,email,role,active,first_login,avatar,password,permissions)')
     .eq('token', m[1])
     .maybeSingle();
+  // Fallback : colonne `permissions` absente → on retry sans elle (schéma de base)
+  if (sessErr && /permissions|does not exist|schema cache/i.test(sessErr.message || '')) {
+    const fb = await supabase
+      .from('sessions')
+      .select('expires_at, user:users!user_id(id,username,full_name,email,role,active,first_login,avatar,password)')
+      .eq('token', m[1])
+      .maybeSingle();
+    sess = fb.data; sessErr = fb.error;
+  }
 
   if (sessErr || !sess || new Date(sess.expires_at) < new Date() || !sess.user?.active) {
     res.status(401).json({ error: 'Session expirée' });
@@ -676,9 +686,18 @@ app.all('/api/bureau/users.php', async (req, res) => {
 
   if (action === 'list') {
     const u = await authGuard(req, res, 'admin'); if (!u) return;
-    const { data } = await supabase.from('users')
+    // Essai 1 : avec les colonnes addon (permissions / practice_domains)
+    let { data, error } = await supabase.from('users')
       .select('id,username,full_name,email,practice_domains,permissions,role,avatar,active,created_at,last_login')
       .order('role', { ascending: false }).order('full_name');
+    // Fallback : colonnes addon absentes → retry sans elles
+    if (error && /(permissions|practice_domains|does not exist|schema cache)/i.test(error.message || '')) {
+      const fb = await supabase.from('users')
+        .select('id,username,full_name,email,role,avatar,active,created_at,last_login')
+        .order('role', { ascending: false }).order('full_name');
+      data = fb.data; error = fb.error;
+    }
+    if (error) return res.status(500).json({ error: error.message });
     return res.json(data ?? []);
   }
 
@@ -3894,17 +3913,18 @@ app.get('/api/bureau/calendar.php', async (req, res) => {
     const from = req.query.from ? String(req.query.from) : new Date(Date.now() - 30 * 86400e3).toISOString().slice(0, 10);
     const to   = req.query.to   ? String(req.query.to)   : new Date(Date.now() + 60 * 86400e3).toISOString().slice(0, 10);
     // Essai 1 : requête complète avec join projets (suppose addon SQL appliqué)
+    // NB: case_events n'a PAS de colonne `status` (seulement completed_at + outcome)
     let { data: events, error } = await supabase
       .from('case_events')
-      .select('id, project_id, type, title, scheduled_at, duration_minutes, location, visible_to_client, status, project:projects!project_id(id, name, case_number, status, priority)')
+      .select('id, project_id, type, title, scheduled_at, duration_minutes, location, visible_to_client, completed_at, project:projects!project_id(id, name, case_number, status, priority)')
       .gte('scheduled_at', from + 'T00:00:00')
       .lte('scheduled_at', to + 'T23:59:59')
       .order('scheduled_at');
-    // Fallback : pas de colonne case_number → on retire le join enrichi
+    // Fallback : pas de colonne case_number sur projects → on retire le join enrichi
     if (error && /case_number|does not exist|schema cache/i.test(error.message || '')) {
       const fb = await supabase
         .from('case_events')
-        .select('id, project_id, type, title, scheduled_at, duration_minutes, location, visible_to_client, status, project:projects!project_id(id, name, status, priority)')
+        .select('id, project_id, type, title, scheduled_at, duration_minutes, location, visible_to_client, completed_at, project:projects!project_id(id, name, status, priority)')
         .gte('scheduled_at', from + 'T00:00:00')
         .lte('scheduled_at', to + 'T23:59:59')
         .order('scheduled_at');
@@ -3924,7 +3944,9 @@ app.get('/api/bureau/calendar.php', async (req, res) => {
       events: (events ?? []).map((e) => ({
         id: e.id, project_id: e.project_id, type: e.type, title: e.title,
         scheduled_at: e.scheduled_at, duration_minutes: e.duration_minutes,
-        location: e.location, status: e.status, visible_to_client: e.visible_to_client,
+        location: e.location,
+        status: e.completed_at ? 'completed' : 'planned',  // statut dérivé de completed_at
+        visible_to_client: e.visible_to_client,
         case_name: e.project?.name ?? null,
         case_number: e.project?.case_number ?? null,
         case_priority: e.project?.priority ?? null,
