@@ -6,7 +6,8 @@ import { useAuth } from "../BureauContext";
 export function TemplatesPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const isSuperAdmin = user?.role === "super_admin";
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+  const isSuperAdmin = isAdmin; // alias — admin peut désormais tout sur les modèles
   const [templates, setTemplates] = useState<CaseTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +63,21 @@ export function TemplatesPage() {
       </header>
 
       {toast && <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">{toast}</div>}
-      {error && <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">{error}</div>}
+      {error && (
+        <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200 space-y-2">
+          <div className="font-semibold">⚠ Erreur</div>
+          <div>{error}</div>
+          {/case_templates|relation .* does not exist|sql\/supabase/i.test(error) && (
+            <div className="rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-200">
+              <strong>Solution :</strong> Exécutez le script <code className="font-mono">sql/supabase_phase3_addon.sql</code> dans
+              Supabase Dashboard → SQL Editor → Run. <br />
+              <a href="/api/bureau/schema-check" target="_blank" rel="noreferrer" className="underline hover:text-amber-100">
+                🩺 Diagnostic complet du schéma
+              </a>
+            </div>
+          )}
+        </div>
+      )}
       {loading && <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4 text-sm text-white/55">Chargement…</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -232,7 +247,9 @@ function TemplateEditModal({ tpl, onClose, onSuccess }: { tpl: CaseTemplate | nu
         <Field label="Description"><textarea rows={2} value={form.description ?? ""} onChange={(e) => setForm({ ...form, description: e.target.value })} className={fieldCls} /></Field>
 
         <div>
-          <label className="block text-xs font-semibold text-white/70 mb-2">Étapes ({milestones.length})</label>
+          <label className="block text-xs font-semibold text-white/70 mb-2">
+            Étapes ({milestones.filter((m) => m.title?.trim()).length} valide{milestones.filter((m) => m.title?.trim()).length > 1 ? "s" : ""} / {milestones.length} total)
+          </label>
           <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
             {milestones.map((m, i) => (
               <div key={i} className="rounded-lg border border-white/10 bg-white/[0.04] p-2 space-y-1.5">

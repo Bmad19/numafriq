@@ -27,7 +27,7 @@ const NAV: NavEntry[] = [
   { to: "/bureau/rh",            label: "Ressources Hum.", icon: <PeopleIcon />,  min: "agent",       perm: "hr" },
   { to: "/bureau/comptabilite",  label: "Comptabilité",    icon: <ChartIcon />,   min: "admin",       perm: "accounting" },
   { to: "/bureau/finance",       label: "Tableau financier",icon: <CoinIcon />,   min: "admin",       perm: "accounting" },
-  { to: "/bureau/modeles",       label: "Modèles dossiers",icon: <StackIcon />,   min: "super_admin", perm: "projects" },
+  { to: "/bureau/modeles",       label: "Modèles dossiers",icon: <StackIcon />,   min: "admin",       perm: "projects" },
   { to: "/bureau/retours",       label: "Retours clients", icon: <StarIcon />,    min: "admin",       perm: "feedback" },
   { to: "/bureau/offres-emploi", label: "Offres d'emploi", icon: <BriefcaseIcon />, min: "admin",     perm: "job_offers" },
   { to: "/bureau/blog",          label: "Blog",            icon: <PencilIcon />,  min: "admin",       perm: "blog" },

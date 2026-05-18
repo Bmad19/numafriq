@@ -1680,48 +1680,86 @@ app.all('/api/bureau/cases.php', async (req, res) => {
       });
     }
     if (action === 'template_create' && req.method === 'POST') {
-      if (!isSuperAdmin) return res.status(403).json({ error: 'Réservé au super administrateur.' });
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
       const b = req.body || {};
+      // Normalisation profonde des étapes (évite tout payload mal formé qui ferait planter le JSONB)
+      const cleanMs = (Array.isArray(b.milestones_json) ? b.milestones_json : [])
+        .filter((m) => m && typeof m === 'object' && String(m.title || '').trim())
+        .map((m, i) => ({
+          title: String(m.title).trim().slice(0, 240),
+          description: m.description ? String(m.description).trim().slice(0, 4000) : '',
+          due_offset_days: Number.isFinite(+m.due_offset_days) ? +m.due_offset_days : 0,
+          order_index: Number.isFinite(+m.order_index) ? +m.order_index : (i + 1) * 10,
+          visible_to_client: m.visible_to_client !== false,
+        }));
+      const cleanEvs = (Array.isArray(b.events_json) ? b.events_json : [])
+        .filter((e) => e && typeof e === 'object' && String(e.title || '').trim())
+        .map((e) => ({
+          type: ['audience','rdv','echeance','depot_pieces','consultation','autre'].includes(e.type) ? e.type : 'rdv',
+          title: String(e.title).trim().slice(0, 240),
+          location: e.location ? String(e.location).slice(0, 300) : '',
+          scheduled_offset_days: Number.isFinite(+e.scheduled_offset_days) ? +e.scheduled_offset_days : 0,
+          duration_minutes: Number.isFinite(+e.duration_minutes) ? +e.duration_minutes : 60,
+          visible_to_client: e.visible_to_client !== false,
+        }));
       const payload = {
         name: String(b.name || '').trim().slice(0, 240),
         description: b.description ? String(b.description).slice(0, 4000) : null,
-        practice_area: b.practice_area || null,
+        practice_area: b.practice_area ? String(b.practice_area).slice(0, 80) : null,
         default_status: b.default_status || 'en_cours',
         default_priority: b.default_priority || 'normale',
-        milestones_json: Array.isArray(b.milestones_json) ? b.milestones_json : [],
-        events_json: Array.isArray(b.events_json) ? b.events_json : [],
+        milestones_json: cleanMs,
+        events_json: cleanEvs,
         is_active: b.is_active !== false,
         created_by: u.id,
       };
       if (!payload.name) return res.status(400).json({ error: 'Le nom du modèle est obligatoire.' });
+      if (cleanMs.length === 0) return res.status(400).json({ error: 'Ajoutez au moins une étape avec un titre.' });
       const { data, error } = await supabase.from('case_templates').insert(payload).select().single();
       if (error) {
+        console.error('template_create error:', error.message);
         const missing = /(relation .* does not exist|Could not find the table|schema cache)/i.test(error.message || '');
         return res.status(missing ? 503 : 500).json({
           error: missing
-            ? "Table 'case_templates' absente. Exécutez sql/supabase_phase3_addon.sql dans Supabase SQL Editor."
-            : error.message,
+            ? "Table 'case_templates' absente. Exécutez sql/supabase_phase3_addon.sql dans Supabase SQL Editor (Supabase Dashboard > SQL Editor > Run)."
+            : `Impossible d'enregistrer le modèle : ${error.message}`,
         });
       }
       return res.json({ success: true, template: data });
     }
     if (action === 'template_update' && req.method === 'PUT') {
-      if (!isSuperAdmin) return res.status(403).json({ error: 'Réservé au super administrateur.' });
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
       const tplId = +id;
       const b = req.body || {};
-      // Sanitise : ne garde que les colonnes connues + force le typage des JSON
+      // Sanitise : ne garde que les colonnes connues + normalise les JSON
       const allowed = ['name','description','practice_area','default_status','default_priority','milestones_json','events_json','is_active'];
       const payload = {};
       for (const k of allowed) if (k in b) payload[k] = b[k];
-      if (payload.milestones_json && !Array.isArray(payload.milestones_json)) payload.milestones_json = [];
-      if (payload.events_json && !Array.isArray(payload.events_json)) payload.events_json = [];
+      if (payload.milestones_json !== undefined) {
+        payload.milestones_json = (Array.isArray(payload.milestones_json) ? payload.milestones_json : [])
+          .filter((m) => m && typeof m === 'object' && String(m.title || '').trim())
+          .map((m, i) => ({
+            title: String(m.title).trim().slice(0, 240),
+            description: m.description ? String(m.description).trim().slice(0, 4000) : '',
+            due_offset_days: Number.isFinite(+m.due_offset_days) ? +m.due_offset_days : 0,
+            order_index: Number.isFinite(+m.order_index) ? +m.order_index : (i + 1) * 10,
+            visible_to_client: m.visible_to_client !== false,
+          }));
+      }
+      if (payload.events_json !== undefined) {
+        payload.events_json = (Array.isArray(payload.events_json) ? payload.events_json : [])
+          .filter((e) => e && typeof e === 'object' && String(e.title || '').trim());
+      }
       if (Object.keys(payload).length === 0) return res.status(400).json({ error: 'Aucune modification fournie.' });
       const { error } = await supabase.from('case_templates').update(payload).eq('id', tplId);
-      if (error) return res.status(500).json({ error: error.message });
+      if (error) {
+        console.error('template_update error:', error.message);
+        return res.status(500).json({ error: `Mise à jour impossible : ${error.message}` });
+      }
       return res.json({ success: true });
     }
     if (action === 'template_delete' && req.method === 'DELETE') {
-      if (!isSuperAdmin) return res.status(403).json({ error: 'Réservé au super administrateur.' });
+      if (!isAdmin) return res.status(403).json({ error: 'Réservé aux administrateurs.' });
       const { error } = await supabase.from('case_templates').delete().eq('id', +id);
       if (error) return res.status(500).json({ error: error.message });
       return res.json({ success: true });

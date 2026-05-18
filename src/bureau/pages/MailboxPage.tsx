@@ -678,17 +678,20 @@ export function MailboxPage() {
                       <iframe
                         title={openMessage.subject}
                         srcDoc={`<!doctype html><html><head><meta charset="utf-8"><base target="_blank"><style>
-                          html,body{background:#dcfce7!important;color:#0f172a;margin:0;padding:16px;font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+                          html,body{background:#263a34!important;color:#f1f5f9;margin:0;padding:16px;font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
                           body *{max-width:100%!important;}
-                          img{height:auto;}a{color:#047857;}
-                          table{max-width:100%!important;}
+                          img{height:auto;background:transparent;}
+                          a{color:#a7d4c5;}
+                          table{max-width:100%!important;background:transparent!important;}
+                          /* Adoucit le contraste pour les emails qui forcent un fond clair (newsletters) */
+                          [bgcolor="#ffffff"],[bgcolor="#FFFFFF"],[style*="background:#fff"],[style*="background-color:#fff"]{background:transparent!important;color:#f1f5f9!important;}
                         </style></head><body>${openMessage.html}</body></html>`}
                         sandbox="allow-same-origin allow-popups"
                         className="w-full h-full min-h-[60vh]"
-                        style={{ background: "#dcfce7" }}
+                        style={{ background: "#263a34" }}
                       />
                     ) : openMessage.text ? (
-                      <pre className="whitespace-pre-wrap p-6 text-[15px] leading-7 font-sans" style={{ background: "#dcfce7", color: "#0f172a", minHeight: "60vh" }}>{openMessage.text}</pre>
+                      <pre className="whitespace-pre-wrap p-6 text-[15px] leading-7 font-sans text-white/90" style={{ minHeight: "60vh" }}>{openMessage.text}</pre>
                     ) : (
                       <p className="p-5 text-sm text-white/55 italic">
                         (Aucun corps texte/HTML lisible — le message contient peut-être uniquement des pièces jointes ou un format binaire.)
